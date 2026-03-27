@@ -1,5 +1,6 @@
 package com.example.fatecCarCarona.entity;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
@@ -52,4 +53,8 @@ public class Ride {
     @ManyToOne
     @JoinColumn(name = "id_veiculo", nullable = false)
     private Vehicle vehicle;
+    
+    
+    //teste
+    private LocalDate data_ride;
 }

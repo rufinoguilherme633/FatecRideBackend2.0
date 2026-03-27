@@ -1,6 +1,7 @@
 package com.example.fatecCarCarona.service;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -169,7 +170,7 @@ public class RideService {
 		carona.setAvailableSeats(dto.vagas_disponiveis());
 		carona.setStatus(rideStatusService.gellByName("ativa"));
 		carona.setVehicle(veiculo);
-
+		carona.setData_ride(LocalDate.now());
 		Ride caronaSalva = rideRepository.save(carona);
 		return convertToRideDTO(caronaSalva);
 	}
