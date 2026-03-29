@@ -47,6 +47,10 @@ public class AgendarRideDiaSemanaService {
 		Ride ride = rideRepository.findById(agendarRide.ride())
 				.orElseThrow(() -> new RuntimeException("Ride não encontrado"));
 
+		// 3. Verificar se o usuário é o motorista da carona
+	    if (!ride.getDriver().getId().equals(user.getId())) {
+	        throw new SecurityException("Esta carona não pertence a este motorista.");
+	    }
 		System.out.println("antes do for");
 		for (Long dia_semana : agendarRide.dia_semana_agendamento()) {
 
@@ -84,7 +88,7 @@ public class AgendarRideDiaSemanaService {
 		agendarRideDiaSemanaRepository.saveAll(lista);
 
 	}
-
+	/*
 	public List<AgendarRideDiaSemanaDTO> pegarTodos(Long id) {
 		User user = userRepository.findById(id).orElseThrow(() -> new RuntimeException("usuario não encontrado"));
 		
@@ -106,5 +110,5 @@ public class AgendarRideDiaSemanaService {
 		
 				return minhalista;
 	}
-
+*/
 }

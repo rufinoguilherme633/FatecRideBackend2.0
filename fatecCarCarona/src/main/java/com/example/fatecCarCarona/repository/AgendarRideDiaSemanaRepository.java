@@ -17,5 +17,5 @@ public interface AgendarRideDiaSemanaRepository extends JpaRepository<AgendarRid
 	List<AgendarRideDiaSemana> findAllByRideId(Long id);
 	
 	
-	List<AgendarRideDiaSemana> findByUserId(Long id);
+	//List<AgendarRideDiaSemana> findByUserId(Long id);
 }
