@@ -202,8 +202,11 @@ Após a aplicação ser iniciada corretamente, acesse a documentação da API at
   
   ## 👨‍💻 Autores
   
-  - Guilherme Rufino – [LinkedIn](linkedin.com/in/guilherme-rufino-680042269)  
-  - Projeto Integrador – FATEC Cotia, 2025
+  **Equipe FatecRide**  
+- [Felipe SMZ](https://github.com/Felipe-SMZ)  
+- [Marcos Santos](https://github.com/MarcosVVSantos)  
+- [Guilherme Rufino](https://github.com/rufinoguilherme633)  
+
   
   
   
