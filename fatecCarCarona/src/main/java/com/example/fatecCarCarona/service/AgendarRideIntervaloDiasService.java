@@ -37,6 +37,10 @@ public class AgendarRideIntervaloDiasService {
 		Ride ride = rideRepository.findById(agendarRide.ride())
 				.orElseThrow(() -> new RuntimeException("Compromisso não encontrado"));
 
+		
+		if (!ride.getDriver().getId().equals(user.getId())) {
+	        throw new SecurityException("Esta carona não pertence a este motorista.");
+	    }
 		IntervaloDias intervaloDias = intervaloDiasRepository.findById(agendarRide.intervalo_dias())
 				.orElseThrow(() -> new RuntimeException("Intervalo de dia não encontrado"));
 

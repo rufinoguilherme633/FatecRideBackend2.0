@@ -48,7 +48,7 @@ public class AgendarRideDiaSemanaController {
 	}
 	
 	
-	
+	/*
 	//fazer
 	@GetMapping("")
 	public ResponseEntity<List<AgendarRideDiaSemanaDTO>> pegarTodos(@PathVariable Integer id) {
@@ -56,7 +56,7 @@ public class AgendarRideDiaSemanaController {
 		return ResponseEntity.ok(todos);
 	}
 	
-	
+	*/
 	
 
 }

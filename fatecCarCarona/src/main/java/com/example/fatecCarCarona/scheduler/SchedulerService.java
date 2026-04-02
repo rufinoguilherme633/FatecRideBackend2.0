@@ -91,7 +91,7 @@ public class SchedulerService {
 		}
 	}
 
-	@Scheduled(fixedDelay = 6000)
+	@Scheduled(cron = "0 0 0 * * *")
 	public void executarAgendador() {
 
 		LocalDate dataHoje = LocalDate.now();
