@@ -1,1 +1,53 @@
-node_modules
+# 🔐 Variáveis de Ambiente
+.env
+.env.local
+.env.*.local
+.env.production
+
+# 📦 Dependências
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 💻 IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.classpath
+*.sublime-project
+*.sublime-workspace
+
+# 📝 Logs
+logs/
+*.log
+lerna-debug.log*
+
+# 📂 Build / Dist
+dist/
+build/
+.next/
+out/
+
+# 🧪 Coverage
+coverage/
+.nyc_output/
+
+# ⚙️ Runtime
+.runtime/
+tmp/
+temp/
+cache/
+
+# 📊 Sistema
+.env.*.swp
+*.bak
+*.tmp
+*.orig
