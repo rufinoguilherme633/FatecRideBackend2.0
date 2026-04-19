@@ -10,7 +10,9 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.fatecCarCarona.dto.AgendarRideDiaSemanaDTO;
 import com.example.fatecCarCarona.dto.ListaDiaSemanas;
@@ -44,14 +46,19 @@ public class AgendarRideDiaSemanaService {
 	@Transactional
 	public AgendarRideDiaSemanaDTO criarNaAgendaRide(Long idLong, AgendarRideDiaSemanaDTO agendarRide) {
 
-		User user = userRepository.findById(idLong).orElseThrow(() -> new RuntimeException("usuario não encontrado"));
+		User user = userRepository.findById(idLong).orElseThrow(() -> new ResponseStatusException(
+	            HttpStatus.NOT_FOUND, "usuario não encontrado"));
 
 		Ride ride = rideRepository.findById(agendarRide.ride())
-				.orElseThrow(() -> new RuntimeException("Ride não encontrado"));
+				.orElseThrow(() -> new ResponseStatusException(
+			            HttpStatus.NOT_FOUND, "Ride não encontrado"));
 
 		// 3. Verificar se o usuário é o motorista da carona
 	    if (!ride.getDriver().getId().equals(user.getId())) {
-	        throw new SecurityException("Esta carona não pertence a este motorista.");
+	    	throw new ResponseStatusException(
+	                HttpStatus.FORBIDDEN,
+	                "Esta carona não pertence a este motorista."
+	            );
 	    }
 		System.out.println("antes do for");
 		for (Long dia_semana : agendarRide.dia_semana_agendamento()) {
@@ -75,7 +82,8 @@ public class AgendarRideDiaSemanaService {
 
 	public void desativar(Long id, ListaDiaSemanas diasSemana) {
 
-		User user = userRepository.findById(id).orElseThrow(() -> new RuntimeException("usuario não encontrado"));
+		User user = userRepository.findById(id).orElseThrow(() -> new ResponseStatusException(
+	            HttpStatus.NOT_FOUND, "usuario não encontrado"));
 
 		List<AgendarRideDiaSemana> lista = agendarRideDiaSemanaRepository.findAllByRideId(id);
 
@@ -92,7 +100,8 @@ public class AgendarRideDiaSemanaService {
 	}
 	
 	public List<AgendarRideDiaSemanaDTO> pegarTodos(Long id) {
-		User user = userRepository.findById(id).orElseThrow(() -> new RuntimeException("usuario não encontrado"));
+		User user = userRepository.findById(id).orElseThrow(() -> new ResponseStatusException(
+	            HttpStatus.NOT_FOUND, "usuario não encontrado"));
 		
 		List<AgendarRideDiaSemana> minhalista = agendarRideDiaSemanaRepository.findByRideDriverIdAndAtivoTrue(user.getId());
 		
