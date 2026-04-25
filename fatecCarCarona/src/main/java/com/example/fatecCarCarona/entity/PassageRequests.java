@@ -32,8 +32,8 @@ public class PassageRequests {
 	Ride carona;
 	
 	@ManyToOne	
-	@JoinColumn(name = "id_passageiro ")
-	User passageiro ;	
+	@JoinColumn(name = "id_passageiro")
+	User passageiro;	
 	
     @ManyToOne
     @JoinColumn(name = "id_origem", nullable = false)
