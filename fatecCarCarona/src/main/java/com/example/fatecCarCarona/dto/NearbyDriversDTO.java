@@ -19,6 +19,7 @@ public record NearbyDriversDTO(
 	    String bairroOrigem,
 	    Double latitudeOrigem,
 	    Double longitudeOrigem,
+	    Double distanciaOrigemKm,
 
 	    String cidadeDestino,
 	    String logradouroDestino,
