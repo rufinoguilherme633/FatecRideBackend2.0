@@ -50,4 +50,11 @@ public class PassageRequests {
     @JoinColumn(name = "id_status_solicitacao", nullable = false)
 	PassageRequestsStatus status;
 
+	@Column(name = "tentativa_atual", nullable = false)
+	private Integer tentativaAtual = 0;
+
+	@ManyToOne
+	@JoinColumn(name = "id_status_pipeline")
+	private PassageRequestsPipelineStatus statusPipeline;
+
 }
