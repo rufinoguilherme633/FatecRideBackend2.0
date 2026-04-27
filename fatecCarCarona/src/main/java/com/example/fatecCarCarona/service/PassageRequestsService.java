@@ -63,8 +63,8 @@ public class PassageRequestsService {
 	PassageRequestsStatusService passageRequestsStatusService;
 	@Autowired
 	PassageRequestsRepository passageRequestsRepository;
-	private Optional<OpenstreetmapDTO> buscarLocalizacao(String endereco) throws Exception {
-		
+	protected Optional<OpenstreetmapDTO> buscarLocalizacao(String endereco) throws Exception {
+
 		Optional<OpenstreetmapDTO> resultado = openstreetmapService.buscarLocal(endereco);
 
 		if (resultado.isEmpty()) {
@@ -73,7 +73,7 @@ public class PassageRequestsService {
 
 		return resultado;
 	}
-	private void validateAddress(String cep, String cidade, String logradouro, String bairro) {
+	protected void validateAddress(String cep, String cidade, String logradouro, String bairro) {
 		Optional<ViaCepDTO> viaCepDTO = viaCepService.buscarCep(cep);
 
 		if (viaCepDTO.isEmpty()) {
@@ -90,7 +90,7 @@ public class PassageRequestsService {
 		//}
 	}
 	
-	private Origin criarOrigem(OriginDTO originDTO, City cidade, OpenstreetmapDTO localizacao) {
+	protected Origin criarOrigem(OriginDTO originDTO, City cidade, OpenstreetmapDTO localizacao) {
 		Origin origem = new Origin();
 		origem.setCity(cidade);
 		origem.setLogradouro(originDTO.logradouro());
@@ -102,7 +102,7 @@ public class PassageRequestsService {
 		return origem;
 	}
 
-	private Destination criarDestino(DestinationDTO destinationDTO, City cidade, OpenstreetmapDTO localizacao) {
+	protected Destination criarDestino(DestinationDTO destinationDTO, City cidade, OpenstreetmapDTO localizacao) {
 		Destination destino = new Destination();
 		destino.setCity(cidade);
 		destino.setLogradouro(destinationDTO.logradouro());
