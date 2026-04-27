@@ -21,9 +21,8 @@ public class PassageRequestsPipelineStatus {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	@Column(name = "id_status_pipeline")
-	Long id;
+	private Long id;
 
 	@Column(name = "status_nome")
-	String nome;
+	private String nome;
 }
-

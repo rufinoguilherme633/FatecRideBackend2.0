@@ -1,9 +1,10 @@
 package com.example.fatecCarCarona.service;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Service;
@@ -15,98 +16,130 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class SseNotificationService {
 
-	private final ConcurrentHashMap<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<Long, ScheduledExecutorService> keepaliveExecutors = new ConcurrentHashMap<>();
-	private static final long SSE_TIMEOUT = Long.MAX_VALUE; // Sem timeout de conexão
-	private static final long KEEPALIVE_INTERVAL_SECONDS = 30; // Enviar keepalive a cada 30s
+	// Map para armazenar emitters (conexões SSE) por userId
+	private final Map<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
+
+	// Map para armazenar schedulers de keepalive por userId
+	private final Map<Long, ScheduledExecutorService> keepaliveSchedulers = new ConcurrentHashMap<>();
 
 	/**
-	 * Registra um novo emitter para um usuário e inicia keepalive automático
+	 * Registra um novo emitter (conexão SSE) para um usuário
+	 * Configura keepalive automático para evitar timeout
 	 */
 	public SseEmitter registrar(Long userId) {
-		log.info("Registrando novo emitter para usuário: {}", userId);
+		// Remover conexão anterior se existir
+		desconectar(userId);
 
-		// Remover emitter anterior se existir
-		if (emitters.containsKey(userId)) {
-			try {
-				emitters.get(userId).complete();
-			} catch (Exception e) {
-				log.warn("Erro ao fechar emitter anterior do usuário {}: {}", userId, e.getMessage());
-			}
+		SseEmitter emitter = new SseEmitter(600000L); // timeout de 10 minutos
+
+		try {
+			// Enviar primeiro evento para confirmar conexão
+			emitter.send(SseEmitter.event()
+					.id(String.valueOf(userId))
+					.name("conexao_estabelecida")
+					.data("Conexão SSE estabelecida com sucesso")
+					.reconnectTime(5000));
+
+			emitters.put(userId, emitter);
+			log.info("Emitter registrado para usuário: {}", userId);
+
+			// Iniciar keepalive automático
+			iniciarKeepalive(userId, emitter);
+
+			// Callback para limpeza quando a conexão é fechada
+			emitter.onCompletion(() -> {
+				log.info("Conexão SSE completada para usuário: {}", userId);
+				emitters.remove(userId);
+				pararKeepalive(userId);
+			});
+
+			emitter.onTimeout(() -> {
+				log.warn("Timeout na conexão SSE para usuário: {}", userId);
+				emitters.remove(userId);
+				pararKeepalive(userId);
+			});
+
+			emitter.onError(throwable -> {
+				log.error("Erro na conexão SSE para usuário {}: {}", userId, throwable.getMessage());
+				emitters.remove(userId);
+				pararKeepalive(userId);
+			});
+
+		} catch (IOException e) {
+			log.error("Erro ao registrar emitter para usuário {}: {}", userId, e.getMessage());
+			emitters.remove(userId);
 		}
-
-		// Criar novo emitter
-		SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
-
-		// Callbacks para limpeza automática
-		emitter.onCompletion(() -> {
-			log.info("SSE completado para usuário: {}", userId);
-			limparUsuario(userId);
-		});
-
-		emitter.onTimeout(() -> {
-			log.info("SSE timeout para usuário: {}", userId);
-			limparUsuario(userId);
-		});
-
-		emitter.onError(e -> {
-			log.error("Erro no SSE do usuário {}: {}", userId, e.getMessage());
-			limparUsuario(userId);
-		});
-
-		emitters.put(userId, emitter);
-
-		// Iniciar keepalive automático
-		iniciarKeepalive(userId, emitter);
 
 		return emitter;
 	}
 
 	/**
-	 * Inicia thread de keepalive para manter conexão viva
+	 * Envia uma notificação para um usuário específico
+	 */
+	public void notificar(Long userId, String eventName, Object data) {
+		SseEmitter emitter = emitters.get(userId);
+
+		if (emitter != null) {
+			try {
+				emitter.send(SseEmitter.event()
+						.id(String.valueOf(System.currentTimeMillis()))
+						.name(eventName)
+						.data(data)
+						.reconnectTime(5000));
+
+				log.info("Notificação enviada para usuário {}: {}", userId, eventName);
+			} catch (IOException e) {
+				log.error("Erro ao enviar notificação para usuário {}: {}", userId, e.getMessage());
+				emitters.remove(userId);
+				pararKeepalive(userId);
+			}
+		} else {
+			log.warn("Nenhuma conexão SSE ativa para usuário: {}", userId);
+		}
+	}
+
+	/**
+	 * Inicia keepalive automático para manter conexão aberta
+	 * Envia um comentário a cada 30 segundos
 	 */
 	private void iniciarKeepalive(Long userId, SseEmitter emitter) {
-		ScheduledExecutorService executor = Executors.newScheduledThreadPool(1, r -> {
+		ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1, r -> {
 			Thread t = new Thread(r, "SSE-Keepalive-" + userId);
 			t.setDaemon(true);
 			return t;
 		});
 
-		executor.scheduleAtFixedRate(() -> {
+		scheduler.scheduleAtFixedRate(() -> {
 			try {
 				emitter.send(SseEmitter.event()
-					.id(userId + "-" + System.currentTimeMillis())
-					.comment("keepalive")
-					.build());
+						.id(String.valueOf(userId + "-keepalive"))
+						.comment("keepalive"));
 				log.debug("Keepalive enviado para usuário: {}", userId);
 			} catch (IOException e) {
-				log.error("Erro ao enviar keepalive para usuário {}: {}", userId, e.getMessage());
-				limparUsuario(userId);
+				log.debug("Erro ao enviar keepalive para usuário {}: {}", userId, e.getMessage());
+				scheduler.shutdown();
+				emitters.remove(userId);
+				pararKeepalive(userId);
 			}
-		}, KEEPALIVE_INTERVAL_SECONDS, KEEPALIVE_INTERVAL_SECONDS, TimeUnit.SECONDS);
+		}, 30, 30, TimeUnit.SECONDS);
 
-		keepaliveExecutors.put(userId, executor);
+		keepaliveSchedulers.put(userId, scheduler);
 	}
 
 	/**
-	 * Envia notificação para um usuário específico
+	 * Para o keepalive automático para um usuário
 	 */
-	public void notificar(Long userId, String evento, Object payload) {
-		SseEmitter emitter = emitters.get(userId);
-		if (emitter != null) {
+	private void pararKeepalive(Long userId) {
+		ScheduledExecutorService scheduler = keepaliveSchedulers.remove(userId);
+		if (scheduler != null && !scheduler.isShutdown()) {
+			scheduler.shutdown();
 			try {
-				log.info("Enviando notificação '{}' para usuário: {}", evento, userId);
-				emitter.send(SseEmitter.event()
-					.id(userId + "-" + System.currentTimeMillis())
-					.name(evento)
-					.data(payload)
-					.build());
-			} catch (IOException e) {
-				log.error("Erro ao enviar notificação para usuário {}: {}", userId, e.getMessage());
-				limparUsuario(userId);
+				if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+					scheduler.shutdownNow();
+				}
+			} catch (InterruptedException e) {
+				scheduler.shutdownNow();
 			}
-		} else {
-			log.warn("Usuário {} não está conectado ao SSE", userId);
 		}
 	}
 
@@ -118,42 +151,27 @@ public class SseNotificationService {
 	}
 
 	/**
-	 * Limpa recursos do usuário (emitter e keepalive)
+	 * Desconecta um usuário manualmente
 	 */
-	private void limparUsuario(Long userId) {
-		log.info("Limpando recursos do usuário: {}", userId);
-
-		// Remover emitter
+	public void desconectar(Long userId) {
 		SseEmitter emitter = emitters.remove(userId);
+		pararKeepalive(userId);
+
 		if (emitter != null) {
 			try {
 				emitter.complete();
+				log.info("Usuário {} desconectado", userId);
 			} catch (Exception e) {
-				log.debug("Emitter já estava fechado para usuário {}", userId);
-			}
-		}
-
-		// Parar keepalive
-		ScheduledExecutorService executor = keepaliveExecutors.remove(userId);
-		if (executor != null) {
-			executor.shutdown();
-			try {
-				if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-					executor.shutdownNow();
-				}
-			} catch (InterruptedException e) {
-				executor.shutdownNow();
-				log.warn("Interrupção ao parar executor de keepalive para usuário {}", userId);
+				log.debug("Erro ao completar emitter para usuário {}: {}", userId, e.getMessage());
 			}
 		}
 	}
 
 	/**
-	 * Desconecta manualmente um usuário
+	 * Retorna o número de conexões ativas
 	 */
-	public void desconectar(Long userId) {
-		log.info("Desconectando usuário: {}", userId);
-		limparUsuario(userId);
+	public int getConexoesAticas() {
+		return emitters.size();
 	}
 }
 

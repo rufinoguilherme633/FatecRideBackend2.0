@@ -2,65 +2,47 @@ package com.example.fatecCarCarona.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
-import com.example.fatecCarCarona.dto.DestinationDTO;
 import com.example.fatecCarCarona.dto.NearbyDriversDTO;
-import com.example.fatecCarCarona.dto.OpenstreetmapDTO;
-import com.example.fatecCarCarona.dto.OriginDTO;
-import com.example.fatecCarCarona.dto.PassageRequestsDTO;
 import com.example.fatecCarCarona.dto.RouteCoordinatesDTO;
-import com.example.fatecCarCarona.entity.City;
-import com.example.fatecCarCarona.entity.Destination;
-import com.example.fatecCarCarona.entity.Origin;
-import com.example.fatecCarCarona.entity.PassageRequests;
 import com.example.fatecCarCarona.entity.PassageRequestQueue;
 import com.example.fatecCarCarona.entity.PassageRequestQueueStatus;
+import com.example.fatecCarCarona.entity.PassageRequests;
 import com.example.fatecCarCarona.entity.PassageRequestsPipelineStatus;
-import com.example.fatecCarCarona.entity.User;
 import com.example.fatecCarCarona.repository.PassageRequestQueueRepository;
 import com.example.fatecCarCarona.repository.PassageRequestQueueStatusRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsPipelineStatusRepository;
-import com.example.fatecCarCarona.repository.RideRepository;
-import com.example.fatecCarCarona.repository.UserRepository;
 
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Service responsável pelo novo fluxo automático de caronas
- * Sistema envia solicitação para motoristas próximos em cascata até uma aceitar
- */
 @Service
 @Slf4j
-public class PassageRequestAutomaticService extends PassageRequestsService {
-
-	@Autowired
-	private PassageRequestQueueRepository filaRepository;
-
-	@Autowired
-	private PassageRequestQueueStatusRepository filaStatusRepository;
-
-	@Autowired
-	private PassageRequestsPipelineStatusRepository pipelineStatusRepository;
+public class PassageRequestAutomaticService {
 
 	@Autowired
 	private PassageRequestsRepository passageRequestsRepository;
 
 	@Autowired
-	private UserRepository userRepository;
+	private PassageRequestQueueRepository passageRequestQueueRepository;
+
+	@Autowired
+	private PassageRequestQueueStatusRepository queueStatusRepository;
+
+	@Autowired
+	private PassageRequestsPipelineStatusRepository pipelineStatusRepository;
 
 	@Autowired
 	private FindNearbyDrivers findNearbyDrivers;
-
-	@Autowired
-	private RideRepository rideRepository;
 
 	@Autowired
 	private SseNotificationService sseNotificationService;
@@ -68,454 +50,320 @@ public class PassageRequestAutomaticService extends PassageRequestsService {
 	@Autowired
 	private PassageRequestsStatusService passageRequestsStatusService;
 
-	@Autowired
-	private OriginService originService;
+	@Value("${carona.auto.timeout-motorista-segundos:60}")
+	private Integer timeoutMotoristaSegundos;
 
-	@Autowired
-	private DestinationService destinationService;
+	@Value("${carona.auto.limite-tentativas:3}")
+	private Integer limiteTentativas;
 
-	@Autowired
-	private CityService cityService;
-
-	/**
-	 * Cria uma nova solicitação automática de carona
-	 * 1. Valida endereços via ViaCep e OpenStreetMap
-	 * 2. Cria Origin e Destination
-	 * 3. Cria PassageRequests com status "aguardando_resposta"
-	 * 4. Busca motoristas próximos e monta fila de cascata
-	 * 5. Envia para o primeiro motorista
-	 *
-	 * @param dto DTO com origem, destino, etc
-	 * @param passageiroId ID do passageiro
-	 * @return PassageRequests criada
-	 * @throws Exception se houver erro na validação ou busca de motoristas
-	 */
-	@Transactional(rollbackOn = Exception.class)
-	public PassageRequests criarSolicitacaoAutomatica(PassageRequestsDTO dto, Long passageiroId) throws Exception {
-		log.info("Criando solicitação automática para passageiro: {}", passageiroId);
-
-		// 1. Busca usuário passageiro
-		User passageiro = userRepository.findById(passageiroId)
-			.orElseThrow(() -> new RuntimeException("Passageiro não encontrado"));
-
-		// 2. Valida endereços
-		validateAddress(dto.originDTO().cep(), dto.originDTO().cidade(),
-			dto.originDTO().logradouro(), dto.originDTO().bairro());
-
-		validateAddress(dto.destinationDTO().cep(), dto.destinationDTO().cidade(),
-			dto.destinationDTO().logradouro(), dto.destinationDTO().bairro());
-
-		// 3. Busca cidades
-		City cidadeOrigem = cityService.validateCity(dto.originDTO().cidade());
-		City cidadeDestino = cityService.validateCity(dto.destinationDTO().cidade());
-
-		// 4. Busca coordenadas via OpenStreetMap
-		String enderecoOrigem = String.format("%s %s", dto.originDTO().logradouro(), cidadeOrigem.getNome());
-		String enderecoDestino = String.format("%s %s", dto.destinationDTO().logradouro(), cidadeDestino.getNome());
-
-		OpenstreetmapDTO localizacaoOrigem = buscarLocalizacao(enderecoOrigem).get();
-		OpenstreetmapDTO localizacaoDestino = buscarLocalizacao(enderecoDestino).get();
-
-		// 5. Cria Origin e Destination
-		Origin origem = criarOrigem(dto.originDTO(), cidadeOrigem, localizacaoOrigem);
-		Destination destino = criarDestino(dto.destinationDTO(), cidadeDestino, localizacaoDestino);
-
-		Origin origemSalva = originService.createOrigin(origem);
-		Destination destinoSalvo = destinationService.createDestination(destino);
-
-		// 6. Cria PassageRequests com status "aguardando_resposta"
-		PassageRequests solicitacao = new PassageRequests();
-		solicitacao.setPassageiro(passageiro);
-		solicitacao.setOrigin(origemSalva);
-		solicitacao.setDestination(destinoSalvo);
-		solicitacao.setDataHora(LocalDateTime.now());
-		solicitacao.setTentativaAtual(0);
-
-		// Status = "aguardando_resposta" (fluxo automático)
-		solicitacao.setStatus(passageRequestsStatusService.findByNome("aguardando_resposta"));
-
-		// StatusPipeline = "aguardando"
-		PassageRequestsPipelineStatus statusPipeline = pipelineStatusRepository
-			.findByNome("aguardando")
-			.orElseThrow(() -> new RuntimeException("Status 'aguardando' não encontrado"));
-		solicitacao.setStatusPipeline(statusPipeline);
-
-		solicitacao = passageRequestsRepository.save(solicitacao);
-
-		log.info("Solicitação automática criada com ID: {}", solicitacao.getId());
-
-		// 7. Busca motoristas próximos e monta fila
-		try {
-			buscarEMontarFila(solicitacao, dto);
-			// 8. Envia para próximo motorista
-			enviarParaProximoMotorista(solicitacao);
-		} catch (Exception e) {
-			log.error("Erro ao buscar motoristas ou enviar solicitação: {}", e.getMessage());
-			declararFalhaFinal(solicitacao);
-		}
-
-		return solicitacao;
-	}
+	// ScheduledExecutorService para gerenciar timeouts
+	private final ScheduledExecutorService timeoutExecutor = Executors.newScheduledThreadPool(2);
 
 	/**
-	 * Busca motoristas próximos e monta a fila de cascata
-	 * Cada motorista recebe um número de ordem (1, 2, 3)
+	 * Inicia o fluxo automático de carona
 	 *
-	 * @param solicitacao PassageRequests criada
-	 * @param dto DTO com dados da solicitação
-	 * @throws Exception se nenhum motorista for encontrado
+	 * @param passageRequestId ID da solicitação de carona
+	 * @param latitudeOrigem Latitude de origem
+	 * @param longitudeOrigem Longitude de origem
+	 * @param latitudeDestino Latitude de destino
+	 * @param longitudeDestino Longitude de destino
 	 */
 	@Transactional
-	protected void buscarEMontarFila(PassageRequests solicitacao, PassageRequestsDTO dto) throws Exception {
-		log.info("Buscando e montando fila de motoristas para solicitação: {}", solicitacao.getId());
+	public void iniciarFluxoAutomatico(Long passageRequestId, Double latitudeOrigem, Double longitudeOrigem,
+			Double latitudeDestino, Double longitudeDestino) throws Exception {
 
-		// 1. Monta RouteCoordinatesDTO com as coordenadas
-		RouteCoordinatesDTO route = new RouteCoordinatesDTO(
-			solicitacao.getOrigin().getLatitude(),
-			solicitacao.getOrigin().getLongitude(),
-			solicitacao.getDestination().getLatitude(),
-			solicitacao.getDestination().getLongitude()
-		);
+		log.info("Iniciando fluxo automático para solicitação: {}", passageRequestId);
 
-		// 2. Busca motoristas próximos (já limitados a 3 e ordenados por score)
-		List<NearbyDriversDTO> motoristasCandidatos = findNearbyDrivers.NearbyDriversService(route);
+		// Buscar solicitação
+		PassageRequests solicitacao = passageRequestsRepository.findById(passageRequestId)
+				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
-		if (motoristasCandidatos.isEmpty()) {
-			throw new Exception("Nenhum motorista próximo encontrado");
-		}
+		// Buscar motoristas próximos
+		List<NearbyDriversDTO> motoristasProximos = findNearbyDrivers.NearbyDriversService(
+				new RouteCoordinatesDTO(latitudeOrigem, longitudeOrigem, latitudeDestino, longitudeDestino));
 
-		// 3. Para cada motorista, cria entrada na fila
-		int ordemFila = 1;
-		for (NearbyDriversDTO motorista : motoristasCandidatos) {
-			PassageRequestQueue entradaFila = new PassageRequestQueue();
-			entradaFila.setSolicitacao(solicitacao);
-			entradaFila.setMotorista(userRepository.findById(motorista.idMotorista())
-				.orElseThrow(() -> new RuntimeException("Motorista não encontrado")));
-			entradaFila.setRide(rideRepository.findById(motorista.idCarona())
-				.orElseThrow(() -> new RuntimeException("Carona não encontrada")));
-			entradaFila.setOrdemFila(ordemFila);
-
-			// Busca o status "pendente" e seta na entrada
-			PassageRequestQueueStatus statusPendente = filaStatusRepository
-				.findByNome("pendente")
-				.orElseThrow(() -> new RuntimeException("Status 'pendente' não encontrado"));
-			entradaFila.setStatus(statusPendente);
-
-			entradaFila.setDistanciaOrigemKm(motorista.distanciaOrigemKm());
-			entradaFila.setDataEnvio(null); // Ainda não foi enviada
-
-			filaRepository.save(entradaFila);
-			log.info("Entrada de fila criada - Motorista: {}, Ordem: {}", motorista.idMotorista(), ordemFila);
-
-			ordemFila++;
-		}
-
-		log.info("Fila montada com {} motoristas para solicitação {}", motoristasCandidatos.size(), solicitacao.getId());
-	}
-
-	/**
-	 * Envia a solicitação para o próximo motorista na fila (status "pendente")
-	 * Se não houver mais motoristas pendentes, declara falha final
-	 *
-	 * @param solicitacao PassageRequests
-	 */
-	@Transactional
-	public void enviarParaProximoMotorista(PassageRequests solicitacao) {
-		log.info("Enviando solicitação {} para próximo motorista", solicitacao.getId());
-
-		// 1. Busca primeira entrada com status "pendente"
-		Optional<PassageRequestQueue> proximaEntrada = filaRepository
-			.findFirstBySolicitacaoIdAndStatusNomeOrderByOrdemFilaAsc(solicitacao.getId(), "pendente");
-
-		if (proximaEntrada.isEmpty()) {
-			// Nenhum motorista pendente - declare falha final
-			log.warn("Nenhum motorista pendente encontrado para solicitação {}", solicitacao.getId());
-			declararFalhaFinal(solicitacao);
+		if (motoristasProximos == null || motoristasProximos.isEmpty()) {
+			log.warn("Nenhum motorista próximo encontrado para solicitação: {}", passageRequestId);
+			atualizarStatusPipeline(solicitacao, "falha_final");
+			notificarPassageiro(solicitacao.getPassageiro().getId(), "nenhum_motorista",
+					"Nenhum motorista disponível no momento. Tente novamente mais tarde.");
 			return;
 		}
 
-		PassageRequestQueue entrada = proximaEntrada.get();
+		// Configurar status pipeline como "aguardando"
+		PassageRequestsPipelineStatus statusAguardando = pipelineStatusRepository.findByNome("aguardando")
+				.orElseThrow(() -> new Exception("Status 'aguardando' não encontrado"));
+		solicitacao.setStatusPipeline(statusAguardando);
 
-		// 2. Atualiza entrada: status = "enviada", dataEnvio = now()
-		PassageRequestQueueStatus statusEnviada = filaStatusRepository
-			.findByNome("enviada")
-			.orElseThrow(() -> new RuntimeException("Status 'enviada' não encontrado"));
-
-		entrada.setStatus(statusEnviada);
-		entrada.setDataEnvio(LocalDateTime.now());
-		filaRepository.save(entrada);
-
-		// 3. Incrementa tentativa atual
-		solicitacao.setTentativaAtual((solicitacao.getTentativaAtual() != null ? solicitacao.getTentativaAtual() : 0) + 1);
+		// Inicializar tentativa
+		solicitacao.setTentativaAtual(0);
 		passageRequestsRepository.save(solicitacao);
 
-		// 4. Notifica motorista via SSE
-		try {
-			Object payloadMotorista = new Object() {
-				public final Long id_solicitacao = solicitacao.getId();
-				public final String nome_passageiro = solicitacao.getPassageiro().getNome();
-				public final String foto_passageiro = solicitacao.getPassageiro().getFoto();
-				public final String origem = solicitacao.getOrigin().getLogradouro() + ", " + solicitacao.getOrigin().getCity().getNome();
-				public final String destino = solicitacao.getDestination().getLogradouro() + ", " + solicitacao.getDestination().getCity().getNome();
-				public final Double distancia_km = entrada.getDistanciaOrigemKm();
-				public final Long timeout_segundos = 120L;
-			};
+		// Criar fila de motoristas
+		criarFilaMotoristas(solicitacao, motoristasProximos);
 
-			sseNotificationService.notificar(entrada.getMotorista().getId(), "nova_solicitacao", payloadMotorista);
-			log.info("SSE enviado para motorista {} - Solicitação {}", entrada.getMotorista().getId(), solicitacao.getId());
-		} catch (Exception e) {
-			log.error("Erro ao notificar motorista {}: {}", entrada.getMotorista().getId(), e.getMessage());
-			// Não falha - o motorista pode estar offline
+		// Enviar para primeiro motorista
+		enviarProximoMotorista(solicitacao);
+	}
+
+	/**
+	 * Cria a fila de motoristas ordenados por proximidade
+	 */
+	@Transactional
+	private void criarFilaMotoristas(PassageRequests solicitacao, List<NearbyDriversDTO> motoristas) throws Exception {
+
+		PassageRequestQueueStatus statusPendente = queueStatusRepository.findByNome("pendente")
+				.orElseThrow(() -> new Exception("Status 'pendente' não encontrado"));
+
+		// Limpar fila anterior se existir
+		passageRequestQueueRepository.findBySolicitacaoIdOrderByOrdemFilaAsc(solicitacao.getId())
+				.forEach(passageRequestQueueRepository::delete);
+
+		int ordem = 1;
+		for (NearbyDriversDTO motorista : motoristas) {
+			PassageRequestQueue filaEntry = new PassageRequestQueue();
+			filaEntry.setSolicitacao(solicitacao);
+			filaEntry.setMotorista(solicitacao.getCarona().getDriver()); // Será definido após buscar o driver
+			filaEntry.setRide(solicitacao.getCarona());
+			filaEntry.setOrdemFila(ordem);
+			filaEntry.setStatus(statusPendente);
+			filaEntry.setDistanciaOrigemKm(motorista.distanciaOrigemKm());
+
+			passageRequestQueueRepository.save(filaEntry);
+			ordem++;
+
+			log.debug("Motorista {} adicionado à fila na posição {}", motorista.idMotorista(), ordem - 1);
 		}
 	}
 
 	/**
-	 * Motorista aceita a solicitação que recebeu
-	 * Atualiza status da fila e da solicitação
-	 * Decrementa availableSeats da Ride
-	 * Notifica passageiro
-	 *
-	 * @param solicitacaoId ID da solicitação
-	 * @param motoristaId ID do motorista
+	 * Envia a solicitação para o próximo motorista na fila
 	 */
 	@Transactional
-	public void motoristaAceita(Long solicitacaoId, Long motoristaId) {
-		log.info("Motorista {} aceitando solicitação {}", motoristaId, solicitacaoId);
+	public void enviarProximoMotorista(PassageRequests solicitacao) throws Exception {
 
-		// 1. Busca entrada com status "enviada"
-		Optional<PassageRequestQueue> entradaOpt = filaRepository
-			.findBySolicitacaoIdAndStatusNome(solicitacaoId, "enviada");
+		log.info("Enviando para próximo motorista. Tentativa atual: {}", solicitacao.getTentativaAtual());
 
-		if (entradaOpt.isEmpty()) {
-			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação não encontrada ou já foi respondida");
+		// Verificar limite de tentativas
+		if (solicitacao.getTentativaAtual() >= limiteTentativas) {
+			log.warn("Limite de tentativas atingido para solicitação: {}", solicitacao.getId());
+			atualizarStatusPipeline(solicitacao, "falha_final");
+			notificarPassageiro(solicitacao.getPassageiro().getId(), "falha_final",
+					"Nenhum motorista aceitou sua solicitação. Solicite novamente.");
+			return;
 		}
 
-		PassageRequestQueue entrada = entradaOpt.get();
+		// Buscar próximo motorista com status "pendente"
+		PassageRequestQueue proximoNaFila = passageRequestQueueRepository
+				.findFirstBySolicitacaoIdAndStatusNomeOrderByOrdemFilaAsc(solicitacao.getId(), "pendente")
+				.orElse(null);
 
-		// 2. Valida que é o motorista correto
-		if (!entrada.getMotorista().getId().equals(motoristaId)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Você não é o motorista dessa solicitação");
+		if (proximoNaFila == null) {
+			log.warn("Nenhum motorista pendente na fila para solicitação: {}", solicitacao.getId());
+			atualizarStatusPipeline(solicitacao, "falha_final");
+			notificarPassageiro(solicitacao.getPassageiro().getId(), "falha_final",
+					"Nenhum motorista disponível. Tente novamente.");
+			return;
 		}
 
-		// 3. Atualiza entrada: status = "aceita"
-		PassageRequestQueueStatus statusAceita = filaStatusRepository
-			.findByNome("aceita")
-			.orElseThrow(() -> new RuntimeException("Status 'aceita' não encontrado"));
+		// Atualizar status para "enviada"
+		PassageRequestQueueStatus statusEnviada = queueStatusRepository.findByNome("enviada")
+				.orElseThrow(() -> new Exception("Status 'enviada' não encontrado"));
+		proximoNaFila.setStatus(statusEnviada);
+		proximoNaFila.setDataEnvio(LocalDateTime.now());
+		passageRequestQueueRepository.save(proximoNaFila);
 
-		entrada.setStatus(statusAceita);
-		entrada.setDataResposta(LocalDateTime.now());
-		filaRepository.save(entrada);
+		// Incrementar tentativa
+		solicitacao.setTentativaAtual(solicitacao.getTentativaAtual() + 1);
+		passageRequestsRepository.save(solicitacao);
 
-		// 4. Atualiza PassageRequests: status = "aceita"
+		// Enviar notificação SSE para o motorista
+		notificarMotorista(proximoNaFila.getMotorista().getId(), "nova_solicitacao",
+				construirDadosNotificacao(solicitacao, proximoNaFila));
+
+		// Configurar timeout para esta tentativa
+		agendarTimeoutMotorista(proximoNaFila.getId(), solicitacao.getId());
+
+		log.info("Notificação enviada para motorista {} na tentativa {}", proximoNaFila.getMotorista().getId(),
+				solicitacao.getTentativaAtual());
+	}
+
+	/**
+	 * Processa a aceitação de um motorista
+	 */
+	@Transactional
+	public void handleMotoristaAceita(Long filaId, Long solicitacaoId, Long motoristaId) throws Exception {
+
+		log.info("Motorista {} aceitou solicitação {}", motoristaId, solicitacaoId);
+
+		PassageRequestQueue fila = passageRequestQueueRepository.findById(filaId)
+				.orElseThrow(() -> new Exception("Entrada de fila não encontrada"));
+
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
-			.orElseThrow(() -> new RuntimeException("Solicitação não encontrada"));
+				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
+		// Atualizar status para "aceita"
+		PassageRequestQueueStatus statusAceita = queueStatusRepository.findByNome("aceita")
+				.orElseThrow(() -> new Exception("Status 'aceita' não encontrado"));
+		fila.setStatus(statusAceita);
+		fila.setDataResposta(LocalDateTime.now());
+		passageRequestQueueRepository.save(fila);
+
+		// Atualizar status pipeline como "aceita"
+		atualizarStatusPipeline(solicitacao, "aceita");
+
+		// Atualizar status da solicitação para "aceita"
 		solicitacao.setStatus(passageRequestsStatusService.findByNome("aceita"));
-		solicitacao.setCarona(entrada.getRide());
-
-		PassageRequestsPipelineStatus statusPipelineAceita = pipelineStatusRepository
-			.findByNome("aceita")
-			.orElseThrow(() -> new RuntimeException("Status 'aceita' não encontrado"));
-		solicitacao.setStatusPipeline(statusPipelineAceita);
-
 		passageRequestsRepository.save(solicitacao);
 
-		// 5. Decrementa availableSeats
-		entrada.getRide().setAvailableSeats(entrada.getRide().getAvailableSeats() - 1);
+		// Notificar passageiro sobre aceitação
+		notificarPassageiro(solicitacao.getPassageiro().getId(), "solicitacao_aceita",
+				"Seu motorista aceitou a solicitação!");
 
-		// 6. Notifica passageiro
-		Object payloadPassageiro = new Object() {
-			public final Long id_solicitacao = solicitacao.getId();
-			public final String nome_motorista = entrada.getMotorista().getNome();
-			public final String foto_motorista = entrada.getMotorista().getFoto();
-			public final String telefone = entrada.getMotorista().getTelefone();
-			public final String veiculo = entrada.getRide().getVehicle().getMarca() + " " + entrada.getRide().getVehicle().getModelo();
-			public final String placa = entrada.getRide().getVehicle().getPlaca();
-		};
+		// Rejeitar outros motoristas na fila
+		rejeitarOutrosMotoristas(solicitacao.getId(), motoristaId);
 
-		sseNotificationService.notificar(solicitacao.getPassageiro().getId(), "solicitacao_aceita", payloadPassageiro);
-		log.info("Passageiro {} notificado - Solicitação aceita", solicitacao.getPassageiro().getId());
+		log.info("Solicitação {} aceita pelo motorista {}", solicitacaoId, motoristaId);
 	}
 
 	/**
-	 * Motorista recusa a solicitação que recebeu
-	 * Atualiza status da fila e tenta próximo motorista
-	 *
-	 * @param solicitacaoId ID da solicitação
-	 * @param motoristaId ID do motorista
+	 * Processa a recusa de um motorista
 	 */
 	@Transactional
-	public void motoristaRecusa(Long solicitacaoId, Long motoristaId) {
-		log.info("Motorista {} recusando solicitação {}", motoristaId, solicitacaoId);
+	public void handleMotoristaRecusa(Long filaId, Long solicitacaoId) throws Exception {
 
-		// 1. Busca entrada com status "enviada"
-		Optional<PassageRequestQueue> entradaOpt = filaRepository
-			.findBySolicitacaoIdAndStatusNome(solicitacaoId, "enviada");
+		log.info("Motorista recusou solicitação {}", solicitacaoId);
 
-		if (entradaOpt.isEmpty()) {
-			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Solicitação não encontrada ou já foi respondida");
-		}
+		PassageRequestQueue fila = passageRequestQueueRepository.findById(filaId)
+				.orElseThrow(() -> new Exception("Entrada de fila não encontrada"));
 
-		PassageRequestQueue entrada = entradaOpt.get();
-
-		// 2. Valida que é o motorista correto
-		if (!entrada.getMotorista().getId().equals(motoristaId)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Você não é o motorista dessa solicitação");
-		}
-
-		// 3. Atualiza entrada: status = "recusada"
-		PassageRequestQueueStatus statusRecusada = filaStatusRepository
-			.findByNome("recusada")
-			.orElseThrow(() -> new RuntimeException("Status 'recusada' não encontrado"));
-
-		entrada.setStatus(statusRecusada);
-		entrada.setDataResposta(LocalDateTime.now());
-		filaRepository.save(entrada);
-
-		// 4. Tenta próximo motorista
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
-			.orElseThrow(() -> new RuntimeException("Solicitação não encontrada"));
+				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
-		tentarProximo(solicitacao);
+		// Atualizar status para "recusada"
+		PassageRequestQueueStatus statusRecusada = queueStatusRepository.findByNome("recusada")
+				.orElseThrow(() -> new Exception("Status 'recusada' não encontrado"));
+		fila.setStatus(statusRecusada);
+		fila.setDataResposta(LocalDateTime.now());
+		passageRequestQueueRepository.save(fila);
+
+		// Enviar para próximo motorista
+		enviarProximoMotorista(solicitacao);
 	}
 
 	/**
-	 * Verifica se há motoristas pendentes e envia para o próximo
-	 * Se não houver mais, declara falha final
-	 *
-	 * @param solicitacao PassageRequests
+	 * Processa timeout de um motorista (não respondeu)
 	 */
 	@Transactional
-	public void tentarProximo(PassageRequests solicitacao) {
-		log.info("Tentando próximo motorista para solicitação {}", solicitacao.getId());
+	public void handleTimeoutMotorista(Long filaId, Long solicitacaoId) throws Exception {
 
-		// 1. Verifica se há motoristas pendentes
-		Optional<PassageRequestQueue> proximaPendente = filaRepository
-			.findFirstBySolicitacaoIdAndStatusNomeOrderByOrdemFilaAsc(solicitacao.getId(), "pendente");
+		log.warn("Timeout para motorista na fila {}, solicitação {}", filaId, solicitacaoId);
 
-		if (proximaPendente.isPresent()) {
-			// 2. Se sim: envia para próximo
-			enviarParaProximoMotorista(solicitacao);
-		} else {
-			// 3. Se não: declara falha
-			declararFalhaFinal(solicitacao);
+		PassageRequestQueue fila = passageRequestQueueRepository.findById(filaId)
+				.orElseThrow(() -> new Exception("Entrada de fila não encontrada"));
+
+		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
+				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
+
+		// Atualizar status para "timeout"
+		PassageRequestQueueStatus statusTimeout = queueStatusRepository.findByNome("timeout")
+				.orElseThrow(() -> new Exception("Status 'timeout' não encontrado"));
+		fila.setStatus(statusTimeout);
+		fila.setDataResposta(LocalDateTime.now());
+		passageRequestQueueRepository.save(fila);
+
+		// Enviar para próximo motorista
+		enviarProximoMotorista(solicitacao);
+	}
+
+	/**
+	 * Rejeita todos os outros motoristas na fila quando um aceita
+	 */
+	@Transactional
+	private void rejeitarOutrosMotoristas(Long solicitacaoId, Long motoristaAceitouId) throws Exception {
+
+		PassageRequestQueueStatus statusRecusada = queueStatusRepository.findByNome("recusada")
+				.orElseThrow(() -> new Exception("Status 'recusada' não encontrado"));
+
+		List<PassageRequestQueue> filasAntigos = passageRequestQueueRepository
+				.findBySolicitacaoIdOrderByOrdemFilaAsc(solicitacaoId);
+
+		for (PassageRequestQueue fila : filasAntigos) {
+			if (!fila.getMotorista().getId().equals(motoristaAceitouId)
+					&& !fila.getStatus().getNome().equals("recusada")
+					&& !fila.getStatus().getNome().equals("aceita")
+					&& !fila.getStatus().getNome().equals("timeout")) {
+				fila.setStatus(statusRecusada);
+				fila.setDataResposta(LocalDateTime.now());
+				passageRequestQueueRepository.save(fila);
+
+				log.debug("Motorista {} rejeitado automaticamente", fila.getMotorista().getId());
+			}
 		}
 	}
 
 	/**
-	 * Declara falha final da solicitação
-	 * Nenhum motorista aceitou nem há mais para tentar
-	 * Notifica passageiro
-	 *
-	 * @param solicitacao PassageRequests
+	 * Agenda timeout para um motorista
+	 */
+	private void agendarTimeoutMotorista(Long filaId, Long solicitacaoId) {
+
+		timeoutExecutor.schedule(() -> {
+			try {
+				// Verificar se ainda está com status "enviada"
+				PassageRequestQueue fila = passageRequestQueueRepository.findById(filaId).orElse(null);
+
+				if (fila != null && fila.getStatus().getNome().equals("enviada")) {
+					handleTimeoutMotorista(filaId, solicitacaoId);
+				}
+			} catch (Exception e) {
+				log.error("Erro ao processar timeout de motorista: {}", e.getMessage());
+			}
+		}, timeoutMotoristaSegundos, TimeUnit.SECONDS);
+	}
+
+	/**
+	 * Atualiza o status do pipeline da solicitação
 	 */
 	@Transactional
-	public void declararFalhaFinal(PassageRequests solicitacao) {
-		log.warn("Falha final na solicitação {}", solicitacao.getId());
+	private void atualizarStatusPipeline(PassageRequests solicitacao, String novoStatus) throws Exception {
 
-		// 1. Atualiza PassageRequests: status = "falha_final"
-		solicitacao.setStatus(passageRequestsStatusService.findByNome("falha_final"));
+		PassageRequestsPipelineStatus status = pipelineStatusRepository.findByNome(novoStatus)
+				.orElseThrow(() -> new Exception("Status pipeline '" + novoStatus + "' não encontrado"));
 
-		PassageRequestsPipelineStatus statusPipelineFalha = pipelineStatusRepository
-			.findByNome("falha_final")
-			.orElseThrow(() -> new RuntimeException("Status 'falha_final' não encontrado"));
-		solicitacao.setStatusPipeline(statusPipelineFalha);
-
+		solicitacao.setStatusPipeline(status);
 		passageRequestsRepository.save(solicitacao);
 
-		// 2. Notifica passageiro
-		Object payloadPassageiro = new Object() {
-			public final String mensagem = "Nenhum motorista disponível no momento. Tente novamente mais tarde.";
-			public final boolean pode_tentar_novamente = true;
-		};
-
-		sseNotificationService.notificar(solicitacao.getPassageiro().getId(), "falha_final", payloadPassageiro);
-		log.info("Passageiro {} notificado - Falha final", solicitacao.getPassageiro().getId());
+		log.debug("Status pipeline atualizado para: {}", novoStatus);
 	}
 
 	/**
-	 * Permite que o passageiro faça retry após falha final
-	 * Cria nova solicitação reutilizando mesmos Origin e Destination
-	 * Monta nova fila e inicia novo ciclo
-	 *
-	 * @param solicitacaoOriginalId ID da solicitação original (que falhou)
-	 * @param passageiroId ID do passageiro
-	 * @return Nova PassageRequests criada
+	 * Constrói dados para notificação de nova solicitação
 	 */
-	@Transactional
-	public PassageRequests retryComMesmosDados(Long solicitacaoOriginalId, Long passageiroId) {
-		log.info("Iniciando retry da solicitação {} para passageiro {}", solicitacaoOriginalId, passageiroId);
+	private Object construirDadosNotificacao(PassageRequests solicitacao, PassageRequestQueue fila) {
+		return Map.of("solicitacaoId", solicitacao.getId(), "filaId", fila.getId(),
+				"passageiroId", solicitacao.getPassageiro().getId(),
+				"passageiroNome", solicitacao.getPassageiro().getNome(),
+				"origem", Map.of("latitude", solicitacao.getOrigin().getLatitude(),
+						"longitude", solicitacao.getOrigin().getLongitude()),
+				"destino", Map.of("latitude", solicitacao.getDestination().getLatitude(),
+						"longitude", solicitacao.getDestination().getLongitude()),
+				"distanciaOrigemKm", fila.getDistanciaOrigemKm(),
+				"tentativa", solicitacao.getTentativaAtual());
+	}
 
-		// 1. Busca solicitação original
-		PassageRequests solicitacaoOriginal = passageRequestsRepository.findById(solicitacaoOriginalId)
-			.orElseThrow(() -> new RuntimeException("Solicitação não encontrada"));
+	/**
+	 * Notifica um motorista
+	 */
+	private void notificarMotorista(Long motoristaId, String eventName, Object data) {
+		sseNotificationService.notificar(motoristaId, eventName, data);
+	}
 
-		// 2. Valida que pertence ao passageiro
-		if (!solicitacaoOriginal.getPassageiro().getId().equals(passageiroId)) {
-			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solicitação não pertence a este passageiro");
-		}
-
-		// 3. Valida que o status é "falha_final"
-		if (!solicitacaoOriginal.getStatus().getNome().equals("falha_final")) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Apenas solicitações com falha final podem fazer retry");
-		}
-
-		// 4. Cria nova solicitação reutilizando Origin e Destination
-		PassageRequests novaSolicitacao = new PassageRequests();
-		novaSolicitacao.setPassageiro(solicitacaoOriginal.getPassageiro());
-		novaSolicitacao.setOrigin(solicitacaoOriginal.getOrigin());
-		novaSolicitacao.setDestination(solicitacaoOriginal.getDestination());
-		novaSolicitacao.setDataHora(LocalDateTime.now());
-		novaSolicitacao.setTentativaAtual(0);
-		novaSolicitacao.setStatus(passageRequestsStatusService.findByNome("aguardando_resposta"));
-
-		PassageRequestsPipelineStatus statusPipeline = pipelineStatusRepository
-			.findByNome("aguardando")
-			.orElseThrow(() -> new RuntimeException("Status 'aguardando' não encontrado"));
-		novaSolicitacao.setStatusPipeline(statusPipeline);
-
-		novaSolicitacao = passageRequestsRepository.save(novaSolicitacao);
-
-		log.info("Nova solicitação criada para retry com ID: {}", novaSolicitacao.getId());
-
-		// 5. Monta nova fila
-		try {
-			// Reconstrói PassageRequestsDTO com dados da solicitação original
-			OriginDTO originDTO = new OriginDTO(
-				solicitacaoOriginal.getOrigin().getCity().getNome(),
-				solicitacaoOriginal.getOrigin().getLogradouro(),
-				solicitacaoOriginal.getOrigin().getNumero(),
-				solicitacaoOriginal.getOrigin().getBairro(),
-				solicitacaoOriginal.getOrigin().getCep()
-			);
-
-			DestinationDTO destinationDTO = new DestinationDTO(
-				solicitacaoOriginal.getDestination().getCity().getNome(),
-				solicitacaoOriginal.getDestination().getLogradouro(),
-				solicitacaoOriginal.getDestination().getNumero(),
-				solicitacaoOriginal.getDestination().getBairro(),
-				solicitacaoOriginal.getDestination().getCep()
-			);
-
-			PassageRequestsDTO dto = new PassageRequestsDTO(originDTO, destinationDTO, null);
-
-			buscarEMontarFila(novaSolicitacao, dto);
-			// Inicia novo fluxo
-			enviarParaProximoMotorista(novaSolicitacao);
-		} catch (Exception e) {
-			log.error("Erro ao fazer retry: {}", e.getMessage());
-			declararFalhaFinal(novaSolicitacao);
-		}
-
-		return novaSolicitacao;
+	/**
+	 * Notifica um passageiro
+	 */
+	private void notificarPassageiro(Long passageiroId, String eventName, Object data) {
+		sseNotificationService.notificar(passageiroId, eventName, data);
 	}
 }
-
-
-
-
-
-
-
 
 

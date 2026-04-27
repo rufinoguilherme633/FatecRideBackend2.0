@@ -1,6 +1,7 @@
 package com.example.fatecCarCarona.controller;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -15,15 +16,16 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.service.annotation.PutExchange;
 
 import com.example.fatecCarCarona.dto.CompletedPassengerRequestDTO;
 import com.example.fatecCarCarona.dto.NearbyDriversDTO;
 import com.example.fatecCarCarona.dto.PassageRequestsDTO;
 import com.example.fatecCarCarona.dto.PassengerSearchRequest;
 import com.example.fatecCarCarona.dto.PendingPassengerRequestDTO;
-import com.example.fatecCarCarona.dto.RideResponseDTO;
+import com.example.fatecCarCarona.dto.IniciarFluxoAutomaticoDTO;
+import com.example.fatecCarCarona.dto.RespostaMotoristaDTO;
 import com.example.fatecCarCarona.service.PassageRequestsService;
+import com.example.fatecCarCarona.service.PassageRequestAutomaticService;
 import com.example.fatecCarCarona.service.TokenService;
 
 
@@ -34,7 +36,9 @@ public class PassageRequestsController {
 	@Autowired
 	PassageRequestsService passageRequestsService;
 	@Autowired
-	private  TokenService tokenService;
+	private TokenService tokenService;
+	@Autowired
+	private PassageRequestAutomaticService passageRequestAutomaticService;
 	@PostMapping("/proximos")
 	public ResponseEntity<List<NearbyDriversDTO>> findNearbyDrivers(@RequestBody PassengerSearchRequest passengerSearchRequest) throws Exception{
 		List<NearbyDriversDTO> motoristaProximos = passageRequestsService.findNearbyDrivers(passengerSearchRequest);
@@ -91,4 +95,60 @@ public class PassageRequestsController {
 	            return ResponseEntity.status(500).build();
 	        }
 	    }
+
+	 /**
+	  * Etapa 5: Inicia o fluxo automático de carona
+	  * Busca motoristas próximos e começa a enviar notificações
+	  */
+	 @PostMapping("/automatico/iniciar")
+	 public ResponseEntity<?> iniciarFluxoAutomatico(@RequestBody IniciarFluxoAutomaticoDTO request) {
+	 	try {
+	 		passageRequestAutomaticService.iniciarFluxoAutomatico(
+	 			request.solicitacaoId(),
+	 			request.latitudeOrigem(),
+	 			request.longitudeOrigem(),
+	 			request.latitudeDestino(),
+	 			request.longitudeDestino()
+	 		);
+	 		return ResponseEntity.ok(Map.of("message", "Fluxo automático iniciado com sucesso"));
+	 	} catch (Exception e) {
+	 		return ResponseEntity.status(500).body(Map.of("error", "Erro ao iniciar fluxo: " + e.getMessage()));
+	 	}
+	 }
+
+	 /**
+	  * Motorista aceita a solicitação via SSE
+	  */
+	 @PostMapping("/automatico/aceitar")
+	 public ResponseEntity<?> aceitarSolicitacaoAutomatica(@RequestHeader("Authorization") String authHeader,
+	 		@RequestBody RespostaMotoristaDTO request) {
+	 	try {
+	 		Long motoristaId = tokenService.extractUserIdFromHeader(authHeader);
+	 		passageRequestAutomaticService.handleMotoristaAceita(
+	 			request.filaId(),
+	 			request.solicitacaoId(),
+	 			motoristaId
+	 		);
+	 		return ResponseEntity.ok(Map.of("message", "Solicitação aceita com sucesso"));
+	 	} catch (Exception e) {
+	 		return ResponseEntity.status(500).body(Map.of("error", "Erro ao aceitar: " + e.getMessage()));
+	 	}
+	 }
+
+	 /**
+	  * Motorista recusa a solicitação via SSE
+	  */
+	 @PostMapping("/automatico/recusar")
+	 public ResponseEntity<?> recusarSolicitacaoAutomatica(@RequestHeader("Authorization") String authHeader,
+	 		@RequestBody RespostaMotoristaDTO request) {
+	 	try {
+	 		passageRequestAutomaticService.handleMotoristaRecusa(
+	 			request.filaId(),
+	 			request.solicitacaoId()
+	 		);
+	 		return ResponseEntity.ok(Map.of("message", "Solicitação recusada"));
+	 	} catch (Exception e) {
+	 		return ResponseEntity.status(500).body(Map.of("error", "Erro ao recusar: " + e.getMessage()));
+	 	}
+	 }
 }
