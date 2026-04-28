@@ -59,6 +59,9 @@ class PassageRequestAutomaticServiceTest {
 	@Mock
 	private PassageRequestsStatusService passageRequestsStatusService;
 
+	@Mock
+	private com.example.fatecCarCarona.repository.UserRepository userRepository;
+
 	@InjectMocks
 	private PassageRequestAutomaticService service;
 
@@ -167,6 +170,16 @@ class PassageRequestAutomaticServiceTest {
 		solicitation.setDestination(destination);
 		solicitation.setStatus(statusSolicitacaoPendente);
 		solicitation.setTentativaAtual(0);
+
+		// Mock padrão leniente para userRepository.findById usado na criação de filas
+		lenient().when(userRepository.findById(anyLong())).thenAnswer(invocation -> {
+			Long id = invocation.getArgument(0);
+			User u = new User();
+			u.setId(id);
+			u.setNome("Driver" + id);
+			u.setEmail("driver" + id + "@example.com");
+			return Optional.of(u);
+		});
 	}
 
 	@Test

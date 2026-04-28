@@ -2,13 +2,13 @@
 
 **Branch:** feature/novo-fluxo-carona-automatico  
 **Início:** 24 de abril de 2026  
-**Status:** Em andamento
+**Status:** Concluído com validação E2E
 
 ---
 
 ## Resumo das Mudanças
 
-Implementação completa de um novo fluxo automático de caronas que substitui o modelo manual de seleção de motorista por um sistema de fila com notificações em tempo real via Server-Sent Events (SSE). O passageiro cria uma solicitação e o sistema automatically envia para motoristas próximos em cascata até que um aceite.
+Implementação completa de um novo fluxo automático de caronas que substitui o modelo manual de seleção de motorista por um sistema de fila com notificações em tempo real via Server-Sent Events (SSE). O passageiro cria uma solicitação e o sistema envia para motoristas próximos em cascata até que um aceite. A Etapa 7 foi validada com os testes unitários e E2E passando com sucesso.
 
 ---
 
@@ -21,6 +21,7 @@ Implementação completa de um novo fluxo automático de caronas que substitui o
 - ✅ **Etapa 4 (4e36188)**: SseNotificationService com keepalive automático, NotificacaoController com endpoints de SSE, configuração de timeout do Tomcat
 - ✅ **Etapa 5 (27042026)**: PassageRequestAutomaticService implementado com orquestração completa do fluxo automático, DTOs para requisições, endpoints SSE
 - ✅ **Etapa 6 (27042026)**: Testes unitários completos com 12 testes, cobertura 96% PassageRequestAutomaticService, branch coverage 66%
+- ✅ **Etapa 7 (28/04/2026)**: Correção do fluxo de tentativa/recusa no automático e validação final com `mvn test` em verde
 
 ---
 
@@ -323,11 +324,10 @@ Status: APROVADO ✅ (Mínimo 80% de cobertura de linhas)
 
 ---
 
-**Última atualização:** 27 de abril de 2026 - Etapa 6 concluída ✅
+**Última atualização:** 28 de abril de 2026 - Etapa 7 concluída ✅
 
 ## Próximas Etapas
 
-- **Etapa 7**: Integração com banco de dados e testes E2E
 - **Etapa 8**: Melhorias de performance e cache
 - **Etapa 9**: Documentação de API (Swagger/OpenAPI) completa
 - **Etapa 10**: Deploy em produção

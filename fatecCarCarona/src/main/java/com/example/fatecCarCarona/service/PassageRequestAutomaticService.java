@@ -23,6 +23,7 @@ import com.example.fatecCarCarona.repository.PassageRequestsRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsPipelineStatusRepository;
 
 import jakarta.transaction.Transactional;
+import org.springframework.context.ApplicationContext;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -39,7 +40,13 @@ public class PassageRequestAutomaticService {
 	private PassageRequestQueueStatusRepository queueStatusRepository;
 
 	@Autowired
+	private com.example.fatecCarCarona.repository.UserRepository userRepository;
+
+	@Autowired
 	private PassageRequestsPipelineStatusRepository pipelineStatusRepository;
+
+	@Autowired
+	private ApplicationContext applicationContext;
 
 	@Autowired
 	private FindNearbyDrivers findNearbyDrivers;
@@ -110,7 +117,7 @@ public class PassageRequestAutomaticService {
 	 * Cria a fila de motoristas ordenados por proximidade
 	 */
 	@Transactional
-	private void criarFilaMotoristas(PassageRequests solicitacao, List<NearbyDriversDTO> motoristas) throws Exception {
+	public void criarFilaMotoristas(PassageRequests solicitacao, List<NearbyDriversDTO> motoristas) throws Exception {
 
 		PassageRequestQueueStatus statusPendente = queueStatusRepository.findByNome("pendente")
 				.orElseThrow(() -> new Exception("Status 'pendente' não encontrado"));
@@ -123,7 +130,9 @@ public class PassageRequestAutomaticService {
 		for (NearbyDriversDTO motorista : motoristas) {
 			PassageRequestQueue filaEntry = new PassageRequestQueue();
 			filaEntry.setSolicitacao(solicitacao);
-			filaEntry.setMotorista(solicitacao.getCarona().getDriver()); // Será definido após buscar o driver
+			var motoristaUser = userRepository.findById(motorista.idMotorista())
+					.orElseThrow(() -> new Exception("Motorista candidato não encontrado: " + motorista.idMotorista()));
+			filaEntry.setMotorista(motoristaUser);
 			filaEntry.setRide(solicitacao.getCarona());
 			filaEntry.setOrdemFila(ordem);
 			filaEntry.setStatus(statusPendente);
@@ -156,7 +165,7 @@ public class PassageRequestAutomaticService {
 		// Buscar próximo motorista com status "pendente"
 		PassageRequestQueue proximoNaFila = passageRequestQueueRepository
 				.findFirstBySolicitacaoIdAndStatusNomeOrderByOrdemFilaAsc(solicitacao.getId(), "pendente")
-				.orElse(null);
+					.orElse(null);
 
 		if (proximoNaFila == null) {
 			log.warn("Nenhum motorista pendente na fila para solicitação: {}", solicitacao.getId());
@@ -173,9 +182,10 @@ public class PassageRequestAutomaticService {
 		proximoNaFila.setDataEnvio(LocalDateTime.now());
 		passageRequestQueueRepository.save(proximoNaFila);
 
-		// Incrementar tentativa
+		// Incrementar a tentativa somente quando um motorista foi efetivamente acionado
 		solicitacao.setTentativaAtual(solicitacao.getTentativaAtual() + 1);
 		passageRequestsRepository.save(solicitacao);
+
 
 		// Enviar notificação SSE para o motorista
 		notificarMotorista(proximoNaFila.getMotorista().getId(), "nova_solicitacao",
@@ -202,17 +212,17 @@ public class PassageRequestAutomaticService {
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
-		// Atualizar status para "aceita"
+		// Atualizar status da entrada de fila para "aceita"
 		PassageRequestQueueStatus statusAceita = queueStatusRepository.findByNome("aceita")
 				.orElseThrow(() -> new Exception("Status 'aceita' não encontrado"));
 		fila.setStatus(statusAceita);
 		fila.setDataResposta(LocalDateTime.now());
 		passageRequestQueueRepository.save(fila);
 
-		// Atualizar status pipeline como "aceita"
+		// Atualizar pipeline da solicitação para 'aceita'
 		atualizarStatusPipeline(solicitacao, "aceita");
 
-		// Atualizar status da solicitação para "aceita"
+		// Atualizar status da solicitação como aceita
 		solicitacao.setStatus(passageRequestsStatusService.findByNome("aceita"));
 		passageRequestsRepository.save(solicitacao);
 
@@ -280,7 +290,7 @@ public class PassageRequestAutomaticService {
 	 * Rejeita todos os outros motoristas na fila quando um aceita
 	 */
 	@Transactional
-	private void rejeitarOutrosMotoristas(Long solicitacaoId, Long motoristaAceitouId) throws Exception {
+	public void rejeitarOutrosMotoristas(Long solicitacaoId, Long motoristaAceitouId) throws Exception {
 
 		PassageRequestQueueStatus statusRecusada = queueStatusRepository.findByNome("recusada")
 				.orElseThrow(() -> new Exception("Status 'recusada' não encontrado"));
@@ -313,7 +323,13 @@ public class PassageRequestAutomaticService {
 				PassageRequestQueue fila = passageRequestQueueRepository.findById(filaId).orElse(null);
 
 				if (fila != null && fila.getStatus().getNome().equals("enviada")) {
-					handleTimeoutMotorista(filaId, solicitacaoId);
+					// Invoke via proxy so @Transactional on handleTimeoutMotorista is applied
+					try {
+						PassageRequestAutomaticService proxy = applicationContext.getBean(PassageRequestAutomaticService.class);
+						proxy.handleTimeoutMotorista(filaId, solicitacaoId);
+					} catch (Exception e) {
+						log.error("Erro ao invocar handleTimeoutMotorista via proxy: {}", e.getMessage());
+					}
 				}
 			} catch (Exception e) {
 				log.error("Erro ao processar timeout de motorista: {}", e.getMessage());
@@ -325,7 +341,7 @@ public class PassageRequestAutomaticService {
 	 * Atualiza o status do pipeline da solicitação
 	 */
 	@Transactional
-	private void atualizarStatusPipeline(PassageRequests solicitacao, String novoStatus) throws Exception {
+	public void atualizarStatusPipeline(PassageRequests solicitacao, String novoStatus) throws Exception {
 
 		PassageRequestsPipelineStatus status = pipelineStatusRepository.findByNome(novoStatus)
 				.orElseThrow(() -> new Exception("Status pipeline '" + novoStatus + "' não encontrado"));

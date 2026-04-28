@@ -43,6 +43,7 @@ public class SecurityConfig {
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
+					.requestMatchers(HttpMethod.POST, "/solicitacao/automatico/iniciar").permitAll()
 				.requestMatchers(HttpMethod.GET,"/cep/**").permitAll()
 				.requestMatchers(HttpMethod.GET,"/userType").permitAll()
 				.requestMatchers(HttpMethod.GET,"/courses").permitAll()
