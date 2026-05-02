@@ -22,7 +22,9 @@ jobs:
 
       - name: Run Tests
         working-directory: ./fatecCarCarona
-        run: ./mvnw clean test
+        run: |
+          chmod +x mvnw
+          ./mvnw clean test
 
   build:
     name: Build Jar
@@ -41,7 +43,9 @@ jobs:
 
       - name: Build Jar
         working-directory: ./fatecCarCarona
-        run: ./mvnw clean package -DskipTests
+        run: |
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
 
   docker:
     name: Docker Build
