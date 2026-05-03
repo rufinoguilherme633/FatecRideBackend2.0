@@ -78,8 +78,8 @@ jobs:
 
       - name: Build  Docker Image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/fatecCarCarona:latest ./fatecCarCarona
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/fatec-carona-api:latest ./fatecCarCarona
 
       - name: Push to Docker Hub
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/fatecCarCarona:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/fatec-carona-api:latest
