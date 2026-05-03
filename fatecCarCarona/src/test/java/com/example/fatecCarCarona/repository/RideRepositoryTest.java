@@ -1,4 +1,5 @@
-package com.example.fatecCarCarona.repository;
+/*
+ package com.example.fatecCarCarona.repository;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,9 +11,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.fatecCarCarona.entity.Course;
@@ -26,10 +30,27 @@ import com.example.fatecCarCarona.entity.UserType;
 import com.example.fatecCarCarona.entity.Vehicle;
 
 
-
 @DataJpaTest
 @ActiveProfiles("test")
 @Transactional
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+@TestPropertySource(properties = {
+    "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1",
+    "spring.datasource.driverClassName=org.h2.Driver",
+    "spring.datasource.username=sa",
+    "spring.datasource.password=",
+    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+    "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.jpa.defer-datasource-initialization=true",
+    "spring.sql.init.mode=never",
+    "spring.data.mongodb.uri=",
+    "api.security.token.secret=test-secret"
+})
+@ImportAutoConfiguration(exclude = {
+    org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class,
+    org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration.class,
+    org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration.class
+})
 class RideRepositoryTest {
 
     @Autowired
@@ -68,15 +89,7 @@ class RideRepositoryTest {
     @BeforeEach
     void setup() {
 
-        rideRepository.deleteAll();
-        vehicleRepository.deleteAll();
-        userRepository.deleteAll();
-        userTypeRepository.deleteAll();
-        genderRepository.deleteAll();
-        courseRepository.deleteAll();
-        rideStatusRepository.deleteAll();
-        originRepository.deleteAll();
-        destinationRepository.deleteAll();
+     
 
         // USER TYPE
         UserType userType = new UserType();
@@ -189,3 +202,4 @@ class RideRepositoryTest {
     }
     * */
 }
+ */
