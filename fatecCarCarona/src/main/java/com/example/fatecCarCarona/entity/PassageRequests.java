@@ -60,7 +60,7 @@ public class PassageRequests {
 
 	// Optimistic locking to avoid concurrent acceptance races
 	@Version
-	@Column(name = "version")
-	private Long version;
+	@Column(name = "version", nullable = false)
+	private long version = 0L;
 
 }
