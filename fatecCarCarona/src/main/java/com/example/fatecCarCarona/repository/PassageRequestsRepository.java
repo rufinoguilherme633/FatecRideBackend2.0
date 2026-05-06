@@ -20,6 +20,8 @@ public interface PassageRequestsRepository extends JpaRepository<PassageRequests
 	@Query("SELECT p FROM PassageRequests p WHERE p.passageiro.id = :userId AND p.status.nome = 'pendente'")
 	PassageRequests findByPassagePending(Long userId);
 
+	boolean existsByPassageiroIdAndStatusNome(Long userId, String statusNome);
+
 
 	@Query("""
 		    SELECT p FROM PassageRequests p 

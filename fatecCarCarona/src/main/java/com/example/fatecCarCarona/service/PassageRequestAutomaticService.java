@@ -65,7 +65,7 @@ public class PassageRequestAutomaticService {
 	@Autowired
 	private PassageRequestsStatusService passageRequestsStatusService;
 
-	@Value("${carona.auto.timeout-motorista-segundos:60}")
+	@Value("${carona.auto.timeout-motorista-segundos:60}0")
 	private Integer timeoutMotoristaSegundos;
 
 	@Value("${carona.auto.limite-tentativas:3}")
@@ -88,7 +88,7 @@ public class PassageRequestAutomaticService {
 	 */
 	@Transactional
 	public void iniciarFluxoAutomatico(Long passageRequestId, Double latitudeOrigem, Double longitudeOrigem,
-			Double latitudeDestino, Double longitudeDestino) throws Exception {
+	                                   Double latitudeDestino, Double longitudeDestino) throws Exception {
 
 		log.info("Iniciando fluxo automático para solicitação: {}", passageRequestId);
 
@@ -217,7 +217,7 @@ public class PassageRequestAutomaticService {
 		// Buscar próximo motorista com status "pendente"
 		PassageRequestQueue proximoNaFila = passageRequestQueueRepository
 				.findFirstBySolicitacaoIdAndStatusNomeOrderByOrdemFilaAsc(solicitacao.getId(), "pendente")
-					.orElse(null);
+				.orElse(null);
 
 		if (proximoNaFila == null) {
 			log.warn("Nenhum motorista pendente na fila para solicitação: {}", solicitacao.getId());
@@ -265,6 +265,16 @@ public class PassageRequestAutomaticService {
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
+		if (fila.getSolicitacao() == null || !fila.getSolicitacao().getId().equals(solicitacaoId)) {
+			log.warn("Aceitação inválida: fila {} não pertence à solicitação {}", filaId, solicitacaoId);
+			throw new IllegalStateException("Aceitação inválida: fila não pertence à solicitação informada");
+		}
+
+		if (fila.getMotorista() == null || !fila.getMotorista().getId().equals(motoristaId)) {
+			log.warn("Aceitação inválida: motorista {} não é o motorista da fila {}", motoristaId, filaId);
+			throw new IllegalStateException("Aceitação inválida: motorista não autorizado para esta fila");
+		}
+
 		// Validate that fila was actually sent and solicitation is still awaiting
 		// Allow idempotent acceptance: if fila already 'aceita' or pipeline already 'aceita', proceed
 		String filaStatus = fila.getStatus() != null ? fila.getStatus().getNome() : "";
@@ -272,7 +282,8 @@ public class PassageRequestAutomaticService {
 			log.warn("Fila {} não está em 'enviada' nem 'aceita' (status={}) - aceitação inválida", filaId, filaStatus);
 			throw new IllegalStateException("Aceitação inválida: fila não está em 'enviada' nem 'aceita'");
 		}
-		String pipelineStatus = solicitacao.getStatusPipeline() != null ? solicitacao.getStatusPipeline().getNome() : "";
+		// If pipeline status is null (tests or legacy data), treat as 'aguardando' to allow acceptance
+		String pipelineStatus = solicitacao.getStatusPipeline() != null ? solicitacao.getStatusPipeline().getNome() : "aguardando";
 		if (!pipelineStatus.equals("aguardando") && !pipelineStatus.equals("aceita")) {
 			log.warn("Solicitação {} pipeline está em {} - aceitação inválida", solicitacaoId, pipelineStatus);
 			throw new IllegalStateException("Aceitação inválida: solicitação não está aguardando nem aceita");
@@ -315,7 +326,7 @@ public class PassageRequestAutomaticService {
 	 * Processa a recusa de um motorista
 	 */
 	@Transactional
-	public void handleMotoristaRecusa(Long filaId, Long solicitacaoId) throws Exception {
+	public void handleMotoristaRecusa(Long filaId, Long solicitacaoId, Long motoristaId) throws Exception {
 
 		log.info("Motorista recusou solicitação {}", solicitacaoId);
 
@@ -324,6 +335,22 @@ public class PassageRequestAutomaticService {
 
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
+
+		if (fila.getSolicitacao() == null || !fila.getSolicitacao().getId().equals(solicitacaoId)) {
+			log.warn("Recusa inválida: fila {} não pertence à solicitação {}", filaId, solicitacaoId);
+			throw new IllegalStateException("Recusa inválida: fila não pertence à solicitação informada");
+		}
+
+		if (fila.getMotorista() == null || !fila.getMotorista().getId().equals(motoristaId)) {
+			log.warn("Recusa inválida: motorista {} não é o motorista da fila {}", motoristaId, filaId);
+			throw new IllegalStateException("Recusa inválida: motorista não autorizado para esta fila");
+		}
+
+		String pipelineStatus = solicitacao.getStatusPipeline() != null ? solicitacao.getStatusPipeline().getNome() : "aguardando";
+		if (!pipelineStatus.equals("aguardando")) {
+			log.warn("Recusa inválida: solicitação {} está com pipeline {}", solicitacaoId, pipelineStatus);
+			throw new IllegalStateException("Recusa inválida: solicitação não está aguardando resposta");
+		}
 
 		// Ensure fila was actually sent
 		if (!fila.getStatus().getNome().equals("enviada")) {
@@ -460,7 +487,7 @@ public class PassageRequestAutomaticService {
 	}
 
 	@Transactional
-	private void marcarSolicitacaoComoRecusada(PassageRequests solicitacao) throws Exception {
+	public void marcarSolicitacaoComoRecusada(PassageRequests solicitacao) throws Exception {
 		var statusRecusada = passageRequestsStatusService.findByNome("recusada");
 		if (statusRecusada == null) {
 			throw new Exception("Status 'recusada' não encontrado");

@@ -33,6 +33,7 @@ import com.example.fatecCarCarona.repository.PassageRequestQueueRepository;
 import com.example.fatecCarCarona.repository.PassageRequestQueueStatusRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsPipelineStatusRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsRepository;
+import com.example.fatecCarCarona.repository.RideRepository;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("PassageRequestAutomaticService - Testes Unitários")
@@ -62,6 +63,9 @@ class PassageRequestAutomaticServiceTest {
 	@Mock
 	private com.example.fatecCarCarona.repository.UserRepository userRepository;
 
+	@Mock
+	private RideRepository rideRepository;
+
 	@InjectMocks
 	private PassageRequestAutomaticService service;
 
@@ -81,6 +85,7 @@ class PassageRequestAutomaticServiceTest {
 	private PassageRequestsPipelineStatus statusFalhaFinal;
 	private PassageRequestsStatus statusSolicitacaoPendente;
 	private PassageRequestsStatus statusSolicitacaoAceita;
+	private PassageRequestsStatus statusSolicitacaoRecusada;
 
 	@BeforeEach
 	void setUp() {
@@ -161,6 +166,10 @@ class PassageRequestAutomaticServiceTest {
 		statusSolicitacaoAceita.setId(2L);
 		statusSolicitacaoAceita.setNome("aceita");
 
+		statusSolicitacaoRecusada = new PassageRequestsStatus();
+		statusSolicitacaoRecusada.setId(3L);
+		statusSolicitacaoRecusada.setNome("recusada");
+
 		// Criar solicitação
 		solicitation = new PassageRequests();
 		solicitation.setId(1L);
@@ -179,6 +188,16 @@ class PassageRequestAutomaticServiceTest {
 			u.setNome("Driver" + id);
 			u.setEmail("driver" + id + "@example.com");
 			return Optional.of(u);
+		});
+
+		lenient().when(rideRepository.findById(anyLong())).thenAnswer(invocation -> {
+			Long id = invocation.getArgument(0);
+			Ride r = new Ride();
+			r.setId(id);
+			r.setDriver(driver);
+			r.setOrigin(origin);
+			r.setDestination(destination);
+			return Optional.of(r);
 		});
 	}
 
@@ -268,7 +287,7 @@ class PassageRequestAutomaticServiceTest {
 
 		// Act & Assert
 		assertDoesNotThrow(() -> {
-			service.handleMotoristaRecusa(1L, 1L);
+			service.handleMotoristaRecusa(1L, 1L, 1L);
 		});
 
 		verify(passageRequestQueueRepository, times(2)).save(any(PassageRequestQueue.class));
@@ -305,6 +324,8 @@ class PassageRequestAutomaticServiceTest {
 		solicitation.setTentativaAtual(3); // Limite já atingido
 		when(pipelineStatusRepository.findByNome("falha_final"))
 				.thenReturn(Optional.of(statusFalhaFinal));
+		when(passageRequestsStatusService.findByNome("recusada"))
+				.thenReturn(statusSolicitacaoRecusada);
 		when(passageRequestsRepository.save(any(PassageRequests.class)))
 				.thenReturn(solicitation);
 
@@ -313,7 +334,8 @@ class PassageRequestAutomaticServiceTest {
 			service.enviarProximoMotorista(solicitation);
 		});
 
-		verify(passageRequestsRepository, times(1)).save(any(PassageRequests.class));
+		// Agora há 2 saves: um em marcarSolicitacaoComoRecusada() e outro em atualizarStatusPipeline()
+		verify(passageRequestsRepository, times(2)).save(any(PassageRequests.class));
 		verify(sseNotificationService, times(1)).notificar(anyLong(), anyString(), any());
 	}
 
@@ -340,6 +362,10 @@ class PassageRequestAutomaticServiceTest {
 				.thenReturn(new ArrayList<>()); // Lista vazia
 		when(pipelineStatusRepository.findByNome("falha_final"))
 				.thenReturn(Optional.of(statusFalhaFinal));
+		when(passageRequestsStatusService.findByNome("recusada"))
+				.thenReturn(statusSolicitacaoRecusada);
+		when(passageRequestsRepository.save(any(PassageRequests.class)))
+				.thenReturn(solicitation);
 
 		// Act & Assert
 		assertDoesNotThrow(() -> {
@@ -358,6 +384,10 @@ class PassageRequestAutomaticServiceTest {
 				.thenReturn(Optional.empty()); // Nenhuma fila pendente
 		when(pipelineStatusRepository.findByNome("falha_final"))
 				.thenReturn(Optional.of(statusFalhaFinal));
+		when(passageRequestsStatusService.findByNome("recusada"))
+				.thenReturn(statusSolicitacaoRecusada);
+		when(passageRequestsRepository.save(any(PassageRequests.class)))
+				.thenReturn(solicitation);
 
 		// Act & Assert
 		assertDoesNotThrow(() -> {

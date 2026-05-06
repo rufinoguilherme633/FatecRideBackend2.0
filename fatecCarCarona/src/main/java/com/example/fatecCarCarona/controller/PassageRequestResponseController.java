@@ -126,7 +126,7 @@ public class PassageRequestResponseController {
 			log.info("Motorista {} recusa solicitação {} (filaId: {})", motoristaId, solicitacaoId, filaId);
 
 			// Processar recusa
-			passageRequestAutomaticService.handleMotoristaRecusa(filaId, solicitacaoId);
+			passageRequestAutomaticService.handleMotoristaRecusa(filaId, solicitacaoId, motoristaId);
 
 			Map<String, Object> response = new HashMap<>();
 			response.put("message", "Solicitação recusada");
