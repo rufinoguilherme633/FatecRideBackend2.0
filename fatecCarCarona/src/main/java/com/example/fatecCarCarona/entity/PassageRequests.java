@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -56,5 +57,10 @@ public class PassageRequests {
 	@ManyToOne
 	@JoinColumn(name = "id_status_pipeline")
 	private PassageRequestsPipelineStatus statusPipeline;
+
+	// Optimistic locking to avoid concurrent acceptance races
+	@Version
+	@Column(name = "version")
+	private Long version;
 
 }
