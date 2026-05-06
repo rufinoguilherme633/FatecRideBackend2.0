@@ -6,6 +6,9 @@ import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,10 +24,12 @@ import com.example.fatecCarCarona.repository.PassageRequestQueueRepository;
 import com.example.fatecCarCarona.repository.PassageRequestQueueStatusRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsPipelineStatusRepository;
+import com.example.fatecCarCarona.repository.RideRepository;
 
 import jakarta.transaction.Transactional;
 import org.springframework.context.ApplicationContext;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.persistence.OptimisticLockException;
 
 @Service
 @Slf4j
@@ -55,6 +60,9 @@ public class PassageRequestAutomaticService {
 	private SseNotificationService sseNotificationService;
 
 	@Autowired
+	private RideRepository rideRepository;
+
+	@Autowired
 	private PassageRequestsStatusService passageRequestsStatusService;
 
 	@Value("${carona.auto.timeout-motorista-segundos:60}")
@@ -65,6 +73,9 @@ public class PassageRequestAutomaticService {
 
 	// ScheduledExecutorService para gerenciar timeouts
 	private final ScheduledExecutorService timeoutExecutor = Executors.newScheduledThreadPool(2);
+
+	// map to track scheduled timeouts by filaId so we can cancel them when needed
+	private final ConcurrentMap<Long, ScheduledFuture<?>> scheduledTimeouts = new ConcurrentHashMap<>();
 
 	/**
 	 * Inicia o fluxo automático de carona
@@ -85,12 +96,21 @@ public class PassageRequestAutomaticService {
 		PassageRequests solicitacao = passageRequestsRepository.findById(passageRequestId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
+		// If frontend does not send coordinates, use the persisted coordinates from the solicitation.
+		if (latitudeOrigem == null || longitudeOrigem == null || latitudeDestino == null || longitudeDestino == null) {
+			latitudeOrigem = solicitacao.getOrigin().getLatitude();
+			longitudeOrigem = solicitacao.getOrigin().getLongitude();
+			latitudeDestino = solicitacao.getDestination().getLatitude();
+			longitudeDestino = solicitacao.getDestination().getLongitude();
+		}
+
 		// Buscar motoristas próximos
 		List<NearbyDriversDTO> motoristasProximos = findNearbyDrivers.NearbyDriversService(
 				new RouteCoordinatesDTO(latitudeOrigem, longitudeOrigem, latitudeDestino, longitudeDestino));
 
 		if (motoristasProximos == null || motoristasProximos.isEmpty()) {
 			log.warn("Nenhum motorista próximo encontrado para solicitação: {}", passageRequestId);
+			marcarSolicitacaoComoRecusada(solicitacao);
 			atualizarStatusPipeline(solicitacao, "falha_final");
 			notificarPassageiro(solicitacao.getPassageiro().getId(), "nenhum_motorista",
 					"Nenhum motorista disponível no momento. Tente novamente mais tarde.");
@@ -130,10 +150,25 @@ public class PassageRequestAutomaticService {
 		for (NearbyDriversDTO motorista : motoristas) {
 			PassageRequestQueue filaEntry = new PassageRequestQueue();
 			filaEntry.setSolicitacao(solicitacao);
-			var motoristaUser = userRepository.findById(motorista.idMotorista())
-					.orElseThrow(() -> new Exception("Motorista candidato não encontrado: " + motorista.idMotorista()));
+			// Defensive: skip invalid candidates instead of failing the whole flow
+			var motoristaUserOpt = userRepository.findById(motorista.idMotorista());
+			if (motoristaUserOpt.isEmpty()) {
+				log.warn("Motorista candidato não encontrado: {} - pulando", motorista.idMotorista());
+				continue;
+			}
+			var motoristaUser = motoristaUserOpt.get();
+			if (motorista.idCarona() == null) {
+				log.warn("Motorista candidato sem idCarona: {} - pulando", motorista.idMotorista());
+				continue;
+			}
+			var rideOpt = rideRepository.findById(motorista.idCarona());
+			if (rideOpt.isEmpty()) {
+				log.warn("Carona candidata não encontrada: {} - pulando", motorista.idCarona());
+				continue;
+			}
+			var ride = rideOpt.get();
 			filaEntry.setMotorista(motoristaUser);
-			filaEntry.setRide(solicitacao.getCarona());
+			filaEntry.setRide(ride);
 			filaEntry.setOrdemFila(ordem);
 			filaEntry.setStatus(statusPendente);
 			filaEntry.setDistanciaOrigemKm(motorista.distanciaOrigemKm());
@@ -154,8 +189,19 @@ public class PassageRequestAutomaticService {
 		log.info("Enviando para próximo motorista. Tentativa atual: {}", solicitacao.getTentativaAtual());
 
 		// Verificar limite de tentativas
+		// Refresh solicitation from DB to avoid stale state
+		solicitacao = passageRequestsRepository.findById(solicitacao.getId())
+				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
+
+		// Verify pipeline is still awaiting
+		if (solicitacao.getStatusPipeline() != null && !solicitacao.getStatusPipeline().getNome().equals("aguardando")) {
+			log.info("Pipeline não está mais aguardando para solicitação {} - abortando envio", solicitacao.getId());
+			return;
+		}
+
 		if (solicitacao.getTentativaAtual() >= limiteTentativas) {
 			log.warn("Limite de tentativas atingido para solicitação: {}", solicitacao.getId());
+			marcarSolicitacaoComoRecusada(solicitacao);
 			atualizarStatusPipeline(solicitacao, "falha_final");
 			notificarPassageiro(solicitacao.getPassageiro().getId(), "falha_final",
 					"Nenhum motorista aceitou sua solicitação. Solicite novamente.");
@@ -169,6 +215,7 @@ public class PassageRequestAutomaticService {
 
 		if (proximoNaFila == null) {
 			log.warn("Nenhum motorista pendente na fila para solicitação: {}", solicitacao.getId());
+			marcarSolicitacaoComoRecusada(solicitacao);
 			atualizarStatusPipeline(solicitacao, "falha_final");
 			notificarPassageiro(solicitacao.getPassageiro().getId(), "falha_final",
 					"Nenhum motorista disponível. Tente novamente.");
@@ -178,6 +225,7 @@ public class PassageRequestAutomaticService {
 		// Atualizar status para "enviada"
 		PassageRequestQueueStatus statusEnviada = queueStatusRepository.findByNome("enviada")
 				.orElseThrow(() -> new Exception("Status 'enviada' não encontrado"));
+
 		proximoNaFila.setStatus(statusEnviada);
 		proximoNaFila.setDataEnvio(LocalDateTime.now());
 		passageRequestQueueRepository.save(proximoNaFila);
@@ -186,12 +234,11 @@ public class PassageRequestAutomaticService {
 		solicitacao.setTentativaAtual(solicitacao.getTentativaAtual() + 1);
 		passageRequestsRepository.save(solicitacao);
 
-
 		// Enviar notificação SSE para o motorista
 		notificarMotorista(proximoNaFila.getMotorista().getId(), "nova_solicitacao",
 				construirDadosNotificacao(solicitacao, proximoNaFila));
 
-		// Configurar timeout para esta tentativa
+		// Configurar timeout para esta tentativa e track the future
 		agendarTimeoutMotorista(proximoNaFila.getId(), solicitacao.getId());
 
 		log.info("Notificação enviada para motorista {} na tentativa {}", proximoNaFila.getMotorista().getId(),
@@ -212,6 +259,17 @@ public class PassageRequestAutomaticService {
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
+		// Validate that fila was actually sent and solicitation is still awaiting
+		if (!fila.getStatus().getNome().equals("enviada")) {
+			log.warn("Fila {} não está em 'enviada' (status={}) - aceitação inválida", filaId, fila.getStatus().getNome());
+			throw new IllegalStateException("Aceitação inválida: fila não está em 'enviada'");
+		}
+		if (solicitacao.getStatusPipeline() != null && !solicitacao.getStatusPipeline().getNome().equals("aguardando")) {
+			log.warn("Solicitação {} pipeline está em {} - aceitação inválida", solicitacaoId,
+					solicitacao.getStatusPipeline().getNome());
+			throw new IllegalStateException("Aceitação inválida: solicitação não está aguardando");
+		}
+
 		// Atualizar status da entrada de fila para "aceita"
 		PassageRequestQueueStatus statusAceita = queueStatusRepository.findByNome("aceita")
 				.orElseThrow(() -> new Exception("Status 'aceita' não encontrado"));
@@ -219,12 +277,21 @@ public class PassageRequestAutomaticService {
 		fila.setDataResposta(LocalDateTime.now());
 		passageRequestQueueRepository.save(fila);
 
+		// cancel scheduled timeout for this fila
+		cancelScheduledTimeout(filaId);
+
 		// Atualizar pipeline da solicitação para 'aceita'
 		atualizarStatusPipeline(solicitacao, "aceita");
 
 		// Atualizar status da solicitação como aceita
+		solicitacao.setCarona(fila.getRide());
 		solicitacao.setStatus(passageRequestsStatusService.findByNome("aceita"));
-		passageRequestsRepository.save(solicitacao);
+		try {
+			passageRequestsRepository.save(solicitacao);
+		} catch (OptimisticLockException ole) {
+			log.warn("Conflito otimista ao salvar solicitação {}: {}", solicitacaoId, ole.getMessage());
+			throw new IllegalStateException("Solicitação já processada por outro motorista");
+		}
 
 		// Notificar passageiro sobre aceitação
 		notificarPassageiro(solicitacao.getPassageiro().getId(), "solicitacao_aceita",
@@ -250,12 +317,21 @@ public class PassageRequestAutomaticService {
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
+		// Ensure fila was actually sent
+		if (!fila.getStatus().getNome().equals("enviada")) {
+			log.warn("Recusa inválida: fila {} não está em 'enviada' (status={})", filaId, fila.getStatus().getNome());
+			return;
+		}
+
 		// Atualizar status para "recusada"
 		PassageRequestQueueStatus statusRecusada = queueStatusRepository.findByNome("recusada")
 				.orElseThrow(() -> new Exception("Status 'recusada' não encontrado"));
 		fila.setStatus(statusRecusada);
 		fila.setDataResposta(LocalDateTime.now());
 		passageRequestQueueRepository.save(fila);
+
+		// cancel scheduled timeout for this fila (explicit recusa)
+		cancelScheduledTimeout(filaId);
 
 		// Enviar para próximo motorista
 		enviarProximoMotorista(solicitacao);
@@ -275,12 +351,21 @@ public class PassageRequestAutomaticService {
 		PassageRequests solicitacao = passageRequestsRepository.findById(solicitacaoId)
 				.orElseThrow(() -> new Exception("Solicitação não encontrada"));
 
+		// Ensure fila was actually sent (avoid race)
+		if (!fila.getStatus().getNome().equals("enviada")) {
+			log.info("Timeout ignored: fila {} status is {}", filaId, fila.getStatus().getNome());
+			return;
+		}
+
 		// Atualizar status para "timeout"
 		PassageRequestQueueStatus statusTimeout = queueStatusRepository.findByNome("timeout")
 				.orElseThrow(() -> new Exception("Status 'timeout' não encontrado"));
 		fila.setStatus(statusTimeout);
 		fila.setDataResposta(LocalDateTime.now());
 		passageRequestQueueRepository.save(fila);
+
+		// remove scheduled future entry if present
+		scheduledTimeouts.remove(filaId);
 
 		// Enviar para próximo motorista
 		enviarProximoMotorista(solicitacao);
@@ -317,7 +402,7 @@ public class PassageRequestAutomaticService {
 	 */
 	private void agendarTimeoutMotorista(Long filaId, Long solicitacaoId) {
 
-		timeoutExecutor.schedule(() -> {
+		ScheduledFuture<?> future = timeoutExecutor.schedule(() -> {
 			try {
 				// Verificar se ainda está com status "enviada"
 				PassageRequestQueue fila = passageRequestQueueRepository.findById(filaId).orElse(null);
@@ -333,8 +418,22 @@ public class PassageRequestAutomaticService {
 				}
 			} catch (Exception e) {
 				log.error("Erro ao processar timeout de motorista: {}", e.getMessage());
+			} finally {
+				// ensure we remove tracking after run
+				scheduledTimeouts.remove(filaId);
 			}
 		}, timeoutMotoristaSegundos, TimeUnit.SECONDS);
+
+		// track future so it can be cancelled if the driver accepts or flow finalizes
+		scheduledTimeouts.put(filaId, future);
+	}
+
+	private void cancelScheduledTimeout(Long filaId) {
+		ScheduledFuture<?> future = scheduledTimeouts.remove(filaId);
+		if (future != null) {
+			future.cancel(false);
+			log.debug("Cancelled scheduled timeout for fila {}", filaId);
+		}
 	}
 
 	/**
@@ -350,6 +449,37 @@ public class PassageRequestAutomaticService {
 		passageRequestsRepository.save(solicitacao);
 
 		log.debug("Status pipeline atualizado para: {}", novoStatus);
+	}
+
+	@Transactional
+	private void marcarSolicitacaoComoRecusada(PassageRequests solicitacao) throws Exception {
+		var statusRecusada = passageRequestsStatusService.findByNome("recusada");
+		if (statusRecusada == null) {
+			throw new Exception("Status 'recusada' não encontrado");
+		}
+		solicitacao.setStatus(statusRecusada);
+		passageRequestsRepository.save(solicitacao); // ✅ SALVAR NO BD
+
+		// Finalizar todas as filas associadas que ainda não têm status final
+		PassageRequestQueueStatus statusRecusadaFila = queueStatusRepository.findByNome("recusada")
+				.orElseThrow(() -> new Exception("Status 'recusada' não encontrado"));
+
+		List<PassageRequestQueue> filas = passageRequestQueueRepository
+				.findBySolicitacaoIdOrderByOrdemFilaAsc(solicitacao.getId());
+
+		for (PassageRequestQueue fila : filas) {
+			String nomeStatus = fila.getStatus() != null ? fila.getStatus().getNome() : "";
+			if (!nomeStatus.equals("recusada") && !nomeStatus.equals("aceita") && !nomeStatus.equals("timeout")) {
+				fila.setStatus(statusRecusadaFila);
+				fila.setDataResposta(LocalDateTime.now());
+				passageRequestQueueRepository.save(fila);
+
+				// cancel any scheduled timeout for this fila
+				cancelScheduledTimeout(fila.getId());
+			}
+		}
+
+		log.info("Solicitação {} marcada como recusada e filas finalizadas", solicitacao.getId());
 	}
 
 	/**
