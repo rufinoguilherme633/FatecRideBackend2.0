@@ -35,6 +35,11 @@ services:
         condition: service_started
     ports:
       - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/backendFateCarona
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - MONGO_URI=mongodb://dbMongo:27017/backendfateccarona
 
 volumes:
   mysql_data:
