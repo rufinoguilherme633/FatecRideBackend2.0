@@ -1,306 +1,310 @@
-# 🚗 FatecRide — Backend
+# FatecRide Backend
 
-API REST do sistema de caronas da Fatec, com autenticação JWT, gestão de usuários, veículos, caronas e agendamento recorrente.
-
----
+Backend do sistema de caronas da Fatec com autenticação JWT, gerenciamento de usuários/veículos/caronas, agendamento recorrente e fluxo automático de matching com SSE.
 
 ## Sumário
 
-- [Visão Geral](#visão-geral)
-- [Tecnologias](#tecnologias)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Configuração do Ambiente](#configuração-do-ambiente)
-- [Como Executar](#como-executar)
-- [Autenticação](#autenticação)
-- [Agendamento de Caronas](#agendamento-de-caronas)
-- [Endpoints](#endpoints)
-- [Fluxo de Teste (Insomnia)](#fluxo-de-teste-insomnia)
-- [Swagger / OpenAPI](#swagger--openapi)
-- [Observações Técnicas](#observações-técnicas)
-- [Autores](#autores)
+- [Visão geral](#visao-geral)
+- [Stack e arquitetura](#stack-e-arquitetura)
+- [Setup local](#setup-local)
+- [Execução](#execucao)
+- [Autenticação](#autenticacao)
+- [Novo fluxo de solicitação automática (SSE)](#novo-fluxo-de-solicitacao-automatica-sse)
+- [Fluxo manual (legado)](#fluxo-manual-legado)
+- [Endpoints principais](#endpoints-principais)
+- [Teste E2E recomendado](#teste-e2e-recomendado)
+- [Troubleshooting](#troubleshooting)
+- [Swagger](#swagger)
 
----
+## Visao geral
 
-## Visão Geral
+O projeto oferece:
 
-O FatecRide Backend fornece a infraestrutura para:
+- Cadastro e login de passageiro/motorista
+- Cadastro e gestão de veículos e caronas
+- Solicitação de carona com busca de motoristas próximos
+- Encaminhamento automático da solicitação para motoristas em fila (com timeout)
+- Notificações em tempo real via SSE
+- Agendamento recorrente de caronas + scheduler diário
 
-- Cadastro e autenticação de usuários (motorista / passageiro)
-- Gerenciamento de perfil, endereço e veículos
-- Criação, atualização e finalização de caronas
-- Solicitação de carona por passageiros
-- Agendamento recorrente de caronas (por dia da semana ou intervalo de dias)
-- Scheduler diário que materializa automaticamente as caronas agendadas
+## Stack e arquitetura
 
----
+- Java 21
+- Spring Boot 3.5.0
+- Spring Security + JWT (`com.auth0:java-jwt`)
+- Spring Data JPA / Hibernate (MySQL)
+- Spring Data MongoDB (módulo de apoio)
+- Springdoc OpenAPI (Swagger)
 
-## Tecnologias
+Estrutura principal:
 
-| Tecnologia | Versão |
-|---|---|
-| Java | 21 |
-| Spring Boot | 3.5.0 |
-| Spring Security | — |
-| Spring Data JPA / Hibernate | — |
-| Spring WebFlux | — |
-| MySQL | 8.x |
-| JWT (`com.auth0:java-jwt`) | 4.4.0 |
-| Lombok | — |
-| Springdoc OpenAPI (Swagger) | 2.8.9 |
-
----
-
-## Estrutura do Projeto
-
-```
+```text
 src/main/java/com/example/fatecCarCarona/
-├── controller/     → Endpoints REST
-├── service/        → Regras de negócio
-├── repository/     → Acesso a dados (Spring Data JPA)
-├── entity/         → Entidades do banco de dados
-├── dto/            → Contratos de entrada e saída
-├── scheduler/      → Jobs agendados (cron diário)
-├── config/         → Configurações gerais
-└── infra/          → Segurança, filtros e infraestrutura
+  controller/   Endpoints REST
+  service/      Regras de negócio
+  repository/   Repositórios JPA
+  entity/       Entidades
+  dto/          Contratos de API
+  scheduler/    Jobs agendados
+  infra/        Segurança, tratamento de erro e infraestrutura
 ```
 
-Classe principal: `FatecCarCaronaApplication.java` (anotada com `@EnableScheduling`)
+Classe principal: `src/main/java/com/example/fatecCarCarona/FatecCarCaronaApplication.java`
 
----
-
-## Configuração do Ambiente
+## Setup local
 
 ### Pré-requisitos
 
 - Java 21
-- MySQL 8.x rodando localmente
-- Maven (ou use o wrapper `mvnw`)
+- MySQL 8+
+- MongoDB local (porta padrão 27017)
+- Maven (ou `mvnw`)
 
-> ⚠️ **Atenção ao nome do banco:** use sempre **letras minúsculas** para evitar incompatibilidades entre sistemas operacionais. O MySQL no Windows é case-insensitive, mas no Linux não é.
+### Banco de dados
 
-### 1. Criar o banco de dados
-
-No MySQL Workbench ou terminal, execute:
+Crie o banco MySQL usado pelo seu `application.properties` (ajuste o nome conforme seu ambiente):
 
 ```sql
-CREATE DATABASE backendfatecarona;
+CREATE DATABASE backendfateccarona;
 ```
 
-### 2. Configurar o `application.properties`
-
-Arquivo em `src/main/resources/application.properties`:
+Configuração de referência (`src/main/resources/application.properties`):
 
 ```properties
-spring.application.name=fatecCarCarona
-spring.datasource.url=jdbc:mysql://localhost:3306/backendfatecarona
+spring.datasource.url=jdbc:mysql://localhost:3306/backendfatecCarona
 spring.datasource.username=root
 spring.datasource.password=root
 spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-api.security.token.secret=my-secret-key-from-video
+spring.data.mongodb.uri=mongodb://localhost:27017/backendfateccarona
+api.security.token.secret=trocar-em-producao
 ```
 
-> 🔒 **Em produção:** substitua as credenciais e o secret JWT por variáveis de ambiente. Nunca comite senhas reais no repositório.
+## Execucao
 
----
-
-## Como Executar
-
-### Windows (PowerShell)
+Windows PowerShell:
 
 ```powershell
-# Build
-.\mvnw.cmd clean install -DskipTests
-# Rodar
+.\mvnw.cmd clean compile
 .\mvnw.cmd spring-boot:run
 ```
 
-### Linux / macOS
+Linux/macOS:
 
 ```bash
-./mvnw clean install -DskipTests
+./mvnw clean compile
 ./mvnw spring-boot:run
 ```
 
-A API sobe em: **`http://localhost:8080`**
+API local: `http://localhost:8080`
 
-> ⚠️ **Problema com espaço no caminho (Windows):** se o seu usuário do Windows tiver espaço no nome (ex: `C:\Users\Felipe S\`), o Maven pode falhar. Nesse caso, mova o projeto para um caminho sem espaços (ex: `C:\DEV\FatecRide\`) e configure o repositório `.m2` também fora da pasta do usuário em `File > Settings > Maven > Local repository` no IntelliJ.
+## Autenticacao
 
----
+Login:
 
-## Autenticação
-
-A API usa **JWT (Bearer Token)**. O token é obtido no login e deve ser enviado em todas as requisições protegidas:
-
-```http
-Authorization: Bearer <token>
-```
-
-**Obter token:**
 ```http
 POST /users/login
 Content-Type: application/json
+
 {
-  "email": "usuario@fatec.sp.gov.br",
-  "password": "senha123"
+  "email": "usuario@exemplo.com",
+  "password": "senha"
 }
 ```
 
----
-
-## Agendamento de Caronas
-
-### Por dia da semana
+Use o token em endpoints protegidos:
 
 ```http
-POST /agendar-ride-dia-semana
 Authorization: Bearer <token>
-Content-Type: application/json
+```
+
+## Novo fluxo de solicitacao automatica (SSE)
+
+Este e o fluxo principal da regra nova.
+
+### 1) Motorista conecta no SSE
+
+Endpoint:
+
+- `GET /notificacoes/stream`
+
+Pode enviar token por:
+
+- header `Authorization: Bearer <token>`
+- ou query param `?token=<jwt>` (útil em `EventSource` no navegador)
+
+### 2) Passageiro cria solicitação
+
+- `POST /solicitacao`
+
+### 3) Passageiro inicia o fluxo automático
+
+- `POST /solicitacao/automatico/iniciar`
+
+Body (`IniciarFluxoAutomaticoDTO`):
+
+```json
 {
-  "ride": 10,
-  "dia_semana_agendamento": [1, 3, 5]
+  "solicitacaoId": 27,
+  "latitudeOrigem": -23.561414,
+  "longitudeOrigem": -46.655881,
+  "latitudeDestino": -23.568704,
+  "longitudeDestino": -46.648242
 }
 ```
-> Os IDs dos dias da semana podem ser consultados em `GET /dias-semanas`.
 
-### Por intervalo de dias
+Se coordenadas não forem enviadas, o backend usa origem/destino da solicitação persistida.
 
-```http
-POST /agendar-compromisso-intervalo-dias
-Authorization: Bearer <token>
-Content-Type: application/json
+### 4) Backend envia evento SSE para o motorista da vez
+
+Evento: `nova_solicitacao`
+
+Payload atual (resumo):
+
+```json
 {
-  "ride": 10,
-  "dataInicio": "2026-04-03",
-  "intervalo_dias": 2
+  "solicitacaoId": 27,
+  "filaId": 4,
+  "passageiroId": 54,
+  "passageiroNome": "Nome Passageiro",
+  "origem": { "latitude": -23.56, "longitude": -46.65 },
+  "destino": { "latitude": -23.57, "longitude": -46.64 },
+  "distanciaOrigemKm": 0.02,
+  "tentativa": 1
 }
 ```
-> Os intervalos disponíveis podem ser consultados em `GET /intervalos-dias`.
 
-### Scheduler automático
+### 5) Motorista responde
 
-Um job com cron diário (`00:00`) em `SchedulerService`:
-- Busca todos os agendamentos ativos
-- Cria uma nova carona copiando os dados da carona base
-- Atualiza o status dos agendamentos quando necessário
+- Aceitar: `POST /solicitacao/automatico/aceitar`
+- Recusar: `POST /solicitacao/automatico/recusar`
 
----
+Body (`RespostaMotoristaDTO`):
 
-## Endpoints
+```json
+{
+  "solicitacaoId": 27,
+  "filaId": 4,
+  "motoristaId": 49,
+  "resposta": "aceita"
+}
+```
 
-### Públicos (sem autenticação)
+### Eventos de retorno ao passageiro
 
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/users/criarMotorista` | Cadastrar motorista |
-| POST | `/users/criarPassageiro` | Cadastrar passageiro |
-| POST | `/users/login` | Autenticar e obter token |
-| GET | `/userType` | Listar tipos de usuário |
-| GET | `/courses` | Listar cursos |
-| GET | `/genders` | Listar gêneros |
-| GET | `/states` | Listar estados |
-| GET | `/states/{id}` | Buscar estado por ID |
-| GET | `/cities/{id_estado}` | Listar cidades do estado |
-| GET | `/cep/{cep}` | Consultar endereço por CEP |
+Dependendo do processamento:
 
-### Protegidos (requer `Authorization: Bearer <token>`)
+- `solicitacao_aceita`
+- `nenhum_motorista`
+- `falha_final`
 
-#### Usuário
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/users` | Buscar dados do usuário logado |
-| PUT | `/users` | Atualizar dados do usuário |
-| DELETE | `/users` | Deletar conta |
+### Regra importante
 
-#### Endereço
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/address` | Buscar endereço do usuário |
-| PUT | `/address/{idAddres}` | Atualizar endereço |
+No fluxo novo, o motorista deve saber da solicitação por SSE. O endpoint `GET /rides/requestsForMyRide` não e a fonte principal desse fluxo.
 
-#### Veículos
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/veiculos` | Listar veículos do motorista |
-| GET | `/veiculos/{id}` | Buscar veículo por ID |
-| POST | `/veiculos` | Cadastrar veículo |
-| PUT | `/veiculos/{id}` | Atualizar veículo |
-| DELETE | `/veiculos/{id}` | Remover veículo |
+## Fluxo manual (legado)
 
-#### Caronas
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/rides` | Criar carona |
-| GET | `/rides/corridasAtivas` | Listar caronas ativas |
-| GET | `/rides/concluidas` | Listar caronas concluídas |
-| PUT | `/rides/{rideId}` | Atualizar carona |
-| GET | `/rides/requestsForMyRide` | Ver solicitações recebidas |
-| PUT | `/rides/{idSolicitacao}/acept` | Aceitar solicitação |
-| PUT | `/rides/finalizar/{rideId}` | Finalizar carona |
+Endpoints legados que ainda existem:
 
-#### Solicitações
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/solicitacao/proximos` | Buscar caronas próximas |
-| POST | `/solicitacao` | Solicitar carona |
-| PUT | `/solicitacao/cancelar/{id}` | Cancelar solicitação |
-| GET | `/solicitacao/concluidas` | Listar solicitações concluídas |
-| GET | `/solicitacao/pending` | Listar solicitações pendentes |
+- `GET /rides/requestsForMyRide`
+- `PUT /rides/{idSolicitacao}/acept`
 
-#### Agendamento
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/dias-semanas` | Listar dias da semana disponíveis |
-| GET | `/intervalos-dias` | Listar intervalos disponíveis |
-| POST | `/agendar-ride-dia-semana` | Agendar por dia da semana |
-| PUT | `/agendar-ride-dia-semana/desativar/{id}` | Desativar agendamento por dia |
-| POST | `/agendar-compromisso-intervalo-dias` | Agendar por intervalo |
-| PUT | `/agendar-compromisso-intervalo-dias/desativar/{id}` | Desativar agendamento por intervalo |
+Esse fluxo depende de associação direta com carona (`solicitacao.carona`), então o comportamento é diferente do fluxo automático.
 
-#### Geolocalização
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/local?local=<texto>` | Buscar localização por texto |
+## Endpoints principais
 
----
+### Público
 
-## Fluxo de Teste (Insomnia)
+- `POST /users/criarMotorista`
+- `POST /users/criarPassageiro`
+- `POST /users/login`
+- `GET /courses`, `GET /genders`, `GET /states`, `GET /cities/{id_estado}`, `GET /cep/{cep}`
 
-Sequência recomendada para testar o fluxo completo:
+### Motorista
 
-1. **Login** → `POST /users/login` → salvar o `token` retornado
-2. **Listar veículos** → `GET /veiculos` (com token)
-3. **Criar carona** → `POST /rides` (com token)
-4. **Buscar caronas ativas** → `GET /rides/corridasAtivas` → anotar o `id` da carona
-5. **Consultar catálogos** → `GET /dias-semanas` e `GET /intervalos-dias`
-6. **Criar agendamento** → `POST /agendar-ride-dia-semana` ou `POST /agendar-compromisso-intervalo-dias`
-7. **Validar** → após a execução do scheduler diário (00:00), verificar as novas caronas geradas em `/rides/corridasAtivas`
+- `POST /rides`
+- `GET /rides/corridasAtivas`
+- `GET /rides/concluidas`
+- `PUT /rides/{rideId}`
+- `PUT /rides/finalizar/{rideId}`
 
----
+### Passageiro
 
-## Swagger / OpenAPI
+- `POST /solicitacao/proximos`
+- `POST /solicitacao`
+- `GET /solicitacao/pending`
+- `PUT /solicitacao/cancelar/{id_solicitacao}`
 
-Com a API em execução, acesse a documentação interativa:
+### Fluxo automático
 
-- **Interface:** `http://localhost:8080/swagger-ui/index.html`
-- **JSON:** `http://localhost:8080/v3/api-docs`
+- `POST /solicitacao/automatico/iniciar`
+- `POST /solicitacao/automatico/aceitar`
+- `POST /solicitacao/automatico/recusar`
+- `GET /notificacoes/stream`
+- `GET /notificacoes/conectado`
+- `POST /notificacoes/desconectar`
 
-> Para testar endpoints protegidos no Swagger, clique em "Authorize" no topo da interface, cole seu token JWT (apenas o token, sem o prefixo "Bearer ") e confirme. Assim, todas as requisições autenticadas serão feitas automaticamente.
+## Teste E2E recomendado
 
----
+Ordem recomendada para validar a regra nova:
 
-## Observações Técnicas
+1. Criar e logar 1 passageiro e 2+ motoristas
+2. Motoristas conectam no SSE (`/notificacoes/stream`)
+3. Motorista cria carona (`POST /rides`)
+4. Passageiro cria solicitação (`POST /solicitacao`)
+5. Passageiro inicia automático (`POST /solicitacao/automatico/iniciar`)
+6. Validar recebimento do evento `nova_solicitacao` no motorista da vez
+7. Aceitar ou recusar (`/solicitacao/automatico/aceitar|recusar`)
+8. Validar retorno para passageiro em `/solicitacao/pending` e eventos SSE
 
-- **Scheduler:** o job diário em `SchedulerService` é responsável por criar as caronas recorrentes. Em ambiente de desenvolvimento, pode ser necessário ajustar o horário do cron para testar.
-- **Tabela `origens`:** a entidade `Origin` é mapeada nessa tabela com os campos `id_origem`, `id_cidade`, `logradouro`, `numero`, `bairro`, `cep`, `latitude` e `longitude`.
-- **Dados de domínio:** em um banco recém-criado, algumas funcionalidades dependem de registros base nas tabelas auxiliares (`dia_semana`, `intervalo_dias`, `status_carona`, `tipo_usuario`, etc.). Certifique-se de populá-las antes de testar.
-- **Convenção de nomes:** sempre use letras minúsculas para o nome do banco (`backendfatecarona`) e mantenha consistente entre todos os membros do time para evitar erros de conexão.
+## Troubleshooting
 
----
+### 1) Erro de FK ao subir app (`id_status_carona`)
 
-## 👨‍💻 Autores
+Erro típico:
 
-**Equipe FatecRide**
+`Cannot add or update a child row ... FK ... caronas.id_status_carona -> status_carona.id_status_carona`
+
+Causa: registros em `caronas` com `id_status_carona` inválido (ex.: `0`).
+
+Correção rápida:
+
+```sql
+SET SQL_SAFE_UPDATES = 0;
+
+UPDATE caronas
+SET id_status_carona = 1
+WHERE id_carona > 0
+  AND (id_status_carona = 0 OR id_status_carona IS NULL);
+
+SET SQL_SAFE_UPDATES = 1;
+```
+
+### 2) SSE conecta e logo desconecta
+
+Verifique:
+
+- token válido no `Authorization` ou `?token=`
+- frontend reconectando automaticamente em `onerror`
+- se há exceção não tratada durante requests SSE
+
+### 3) Motorista não recebe solicitação
+
+Checklist:
+
+- passageiro chamou `POST /solicitacao/automatico/iniciar`
+- motorista estava conectado no SSE antes do envio
+- fila foi criada com status `pendente/enviada`
+- há motoristas/caronas elegíveis na busca de proximidade
+
+## Swagger
+
+- UI: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+
+## Autores
+
+Equipe FatecRide:
+
 - [Felipe SMZ](https://github.com/Felipe-SMZ)
 - [Marcos Santos](https://github.com/MarcosVVSantos)
 - [Guilherme Rufino](https://github.com/rufinoguilherme633)

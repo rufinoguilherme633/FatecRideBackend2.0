@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### External Documentation - Not for Version Control ###
+ANALISE_REFATORACAO_CARONA.md
+IMPLEMENTACAO_NOVO_FLUXO.md
+docs/
+

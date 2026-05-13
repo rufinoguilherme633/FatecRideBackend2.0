@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -32,8 +33,8 @@ public class PassageRequests {
 	Ride carona;
 	
 	@ManyToOne	
-	@JoinColumn(name = "id_passageiro ")
-	User passageiro ;	
+	@JoinColumn(name = "id_passageiro")
+	User passageiro;	
 	
     @ManyToOne
     @JoinColumn(name = "id_origem", nullable = false)
@@ -49,5 +50,17 @@ public class PassageRequests {
     @ManyToOne
     @JoinColumn(name = "id_status_solicitacao", nullable = false)
 	PassageRequestsStatus status;
+
+	@Column(name = "tentativa_atual", nullable = false)
+	private Integer tentativaAtual = 0;
+
+	@ManyToOne
+	@JoinColumn(name = "id_status_pipeline")
+	private PassageRequestsPipelineStatus statusPipeline;
+
+	// Optimistic locking to avoid concurrent acceptance races
+	@Version
+	@Column(name = "version", nullable = false)
+	private long version = 0L;
 
 }
