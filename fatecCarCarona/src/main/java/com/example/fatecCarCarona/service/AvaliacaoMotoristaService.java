@@ -25,16 +25,12 @@ public class AvaliacaoMotoristaService {
 	 
 	  @Autowired
 	  AvaliacaoMotoristaRepository avaliacaoMotoristaRepository;
-	  
 	  @Autowired
 	  UserRepository userRepository;
-	  
 	  @Autowired
 	  RideRepository rideRepository;
-	  
 	  @Autowired
 	  PassageRequestsRepository passageRequestsRepository;
-	  
 	  @Autowired
 	  ConversorAvaliacao conversorAvaliacao;
 	  
@@ -92,24 +88,23 @@ public class AvaliacaoMotoristaService {
 	  }
 	  
 	  
-	  public int pegarMediaComentarioCarona(Long idLong,Long id_motorista){
+	  public double pegarMediaComentarioCarona(Long idLong,Long id_motorista){
 		  int somaAvaliacoes = 0;
 		  User user = userRepository.findById(idLong).orElseThrow(() -> new RuntimeException("usuario não encontrado"));
 		 AvaliacaoMotorista avaliacoes= avaliacaoMotoristaRepository.findByIdUsuarioMotorista(id_motorista);
 		
 		 if (avaliacoes == null || avaliacoes.getComentarios().isEmpty()) {
-			    return 0;
+			 System.out.println(0);   
+			 return 0;
 			}
 		  for(Comentario i :avaliacoes.getComentarios()) {
 			  
 			somaAvaliacoes += i.getAvaliacao();  
 			  
 		  }
-		  
-		  System.out.print("somaAvaliacoes "+somaAvaliacoes);
-		  
-		  System.out.print("somaAvaliacoes "+avaliacoes.getComentarios().size());
-	    return somaAvaliacoes / avaliacoes.getComentarios().size();
+		  System.out.println(somaAvaliacoes / avaliacoes.getComentarios().size());
+	
+	    return (double) somaAvaliacoes / avaliacoes.getComentarios().size();
 	    
 	  }
 }

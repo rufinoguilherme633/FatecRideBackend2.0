@@ -31,7 +31,7 @@ public class AvaliacaoMotoristaController {
 	  }
 	  
 	  @GetMapping("/{id_motorista}")
-	  public Integer pegarMediaComentarioCarona(@RequestHeader("Authorization") String authHeader,@PathVariable("id_motorista") Long id_motorista){
+	  public double pegarMediaComentarioCarona(@RequestHeader("Authorization") String authHeader,@PathVariable("id_motorista") Long id_motorista){
 		  Long idLong = tokenService.extractUserIdFromHeader(authHeader);
 		  
 		  

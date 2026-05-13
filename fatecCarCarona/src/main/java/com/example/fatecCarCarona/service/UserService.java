@@ -3,9 +3,12 @@ package com.example.fatecCarCarona.service;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.example.fatecCarCarona.converter.UserConversor;
 import com.example.fatecCarCarona.dto.UserAddressesDTO;
 import com.example.fatecCarCarona.dto.UserBaseDTO;
 import com.example.fatecCarCarona.dto.UserDTO;
@@ -33,167 +36,95 @@ public class UserService {
 	@Autowired
 	UserAddressesService userAddressesService;
 	@Autowired
-
 	VehicleService vehicleService;
 	@Autowired
-	private  PasswordEncoder passwordEncoder;
+	private  PasswordEncoder passwordEncoder;	
 	@Autowired
-	private  TokenService tokenService;
+	UserConversor userconversor;
 
 
-	public Boolean existeEmail(String email,Long id_usuario ) throws Exception {
-
+	public void existeEmail(String email,Long id_usuario ) throws Exception {
 		Optional<User> existingEmail = userRepository.findByEmail(email);
 		if(existingEmail.isPresent() && !existingEmail.get().getId().equals(id_usuario)) {
-        	throw new Exception("Email já cadastrada por outro usuário");
-
+			throw new ResponseStatusException(
+					HttpStatus.CONFLICT,
+					"Email já cadastrado por outro usuário"
+				);
 		}
-		return true;
 	}
 
+	
+	public User existUser(long idLong) {
+		User user = userRepository.findById(idLong).orElseThrow(() -> new ResponseStatusException(
+		        HttpStatus.NOT_FOUND, "usuario não encontrado"));
+		return user;
+	}
+	
+	
 	public User createUser(User user){
 		return userRepository.save(user);
 	}
 
 
-	public User convertDtoToUser(UserDriverDTO userDriverDTO) {
-		Course course = courseService.validateCourse(userDriverDTO.courseId());
-		Gender gender =  genderService.validateGender(userDriverDTO.genderId());
-		UserType userType = userTypeService.validateUserType(userDriverDTO.userTypeId());
-		User user = new User();
-		user.setNome(userDriverDTO.nome());
-		user.setSobrenome(userDriverDTO.sobrenome());
-		user.setEmail(userDriverDTO.email());
-		user.setSenha(userDriverDTO.senha());
-		user.setTelefone(userDriverDTO.telefone());
-		user.setFoto(userDriverDTO.foto());
-		user.setUserType(userType);
-		user.setGender(gender);
-		user.setCourse(course);
-		return user;
-	}
-
-	public User convertDtoToUser(UserDTO userDTO) {
-		Course course = courseService.validateCourse(userDTO.courseId());
-		Gender gender =  genderService.validateGender(userDTO.genderId());
-		UserType userType = userTypeService.validateUserType(userDTO.userTypeId());
-		User user = new User();
-		user.setNome(userDTO.nome());
-		user.setSobrenome(userDTO.sobrenome());
-		user.setEmail(userDTO.email());
-		user.setSenha(userDTO.senha());
-		user.setTelefone(userDTO.telefone());
-		user.setFoto(userDTO.foto());
-		user.setUserType(userType);
-		user.setGender(gender);
-		user.setCourse(course);
-
-		return user;
-	}
-
-	public UserDriverDTO convertUserDriverToUserDriverDto(User user,UserAddressesDTO userAddressesDTO, VehicleDTO  vehicleDTO) {
-	    return new UserDriverDTO(
-	        user.getNome(),
-	        user.getSobrenome(),
-	        user.getEmail(),
-	        user.getSenha(),
-	        user.getTelefone(),
-	        user.getFoto(),
-	        user.getUserType().getId(),
-	        user.getGender().getId(),
-	        user.getCourse().getId(),
-	        userAddressesDTO,
-	        vehicleDTO
-
-	    );
-	}
-
-	public UserDTO convertUserToUserDto(User user,UserAddressesDTO userAddressesDTO) {
-	    return new UserDTO(
-	        user.getNome(),
-	        user.getSobrenome(),
-	        user.getEmail(),
-	        user.getSenha(),
-	        user.getTelefone(),
-	        user.getFoto(),
-	        user.getUserType().getId(),
-	        user.getGender().getId(),
-	        user.getCourse().getId(),
-	        userAddressesDTO
-	    );
-	}
-
-	public UserBaseDTO convertUserToUserBaseDto(User user) {
-	    return new UserBaseDTO(
-	        user.getNome(),
-	        user.getSobrenome(),
-	        user.getEmail(),
-	        user.getSenha(),
-	        user.getTelefone(),
-	        user.getFoto(),
-	        user.getUserType().getId(),
-	        user.getGender().getId(),
-	        user.getCourse().getId()
-
-	    );
-	}
-
 	@Transactional(rollbackOn = Exception.class)
 	public UserDriverDTO  cadastrarDrivers(UserDriverDTO userDriverDTO) throws Exception {
+			
+		User user  = userconversor.convertDtoToUser(userDriverDTO);
 
-		User user  = convertDtoToUser(userDriverDTO);
-
+		existeEmail(userDriverDTO.email(), null);
 		user.setSenha(passwordEncoder.encode(userDriverDTO.senha()));
 
 		if (userDriverDTO.vehicleDTO() == null) {
-            throw new Exception("É preciso cadastrar pelo menos um carro");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "É preciso cadastrar pelo menos um carro");
+           // throw new Exception("É preciso cadastrar pelo menos um carro");
         }
 		if (userDriverDTO.userAddressesDTO() == null) {
-            throw new Exception("É preciso cadastrar endereço");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "É preciso cadastrar endereço");
+			//throw new Exception("É preciso cadastrar endereço");
         }
 		if(user.getUserType().getNome().equalsIgnoreCase("passageiro") ) {
-
-			throw new Exception("usuario passageiros não podem cadastrar carros");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usuário passageiro não pode cadastrar carro");
+	    
+			//throw new Exception("usuario passageiros não podem cadastrar carros");
 		}
-
 
 			User newUser = this.createUser(user);
 			UserAddressesDTO createUserAddresses = userAddressesService.cadastrarUserAddresses(userDriverDTO.userAddressesDTO() ,newUser);
 
 			VehicleDTO vehicleDTO= vehicleService.cadastrarVehehicle(userDriverDTO.vehicleDTO(),newUser);
 
-		    return convertUserDriverToUserDriverDto(newUser, createUserAddresses, vehicleDTO);
-
+		    return userconversor.convertUserDriverToUserDriverDto(newUser, createUserAddresses, vehicleDTO);
 	}
 
-
-
-	@Transactional(rollbackOn = Exception.class)
-	public UserDTO  cadastrarUser(UserDTO userDTO) throws Exception {
-
-		User user  = convertDtoToUser(userDTO);
-		user.setSenha(passwordEncoder.encode(userDTO.senha()));
-
-		if (userDTO.userAddressesDTO() == null) {
-            throw new Exception("É preciso cadastrar endereço");
-        }
-		if(!user.getUserType().getNome().equalsIgnoreCase("passageiro")) {
-
-			throw new Exception("se quiser ser passageiro escolha tipo passageiro");
+	
+		@Transactional(rollbackOn = Exception.class)
+		public UserDTO  cadastrarUser(UserDTO userDTO) throws Exception {
+	
+			User user  = userconversor.convertDtoToUser(userDTO);
+			user.setSenha(passwordEncoder.encode(userDTO.senha()));
+	
+			if (userDTO.userAddressesDTO() == null) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "É preciso cadastrar endereço");
+	            //throw new Exception("É preciso cadastrar endereço");
+	        }
+			if(!user.getUserType().getNome().equalsIgnoreCase("passageiro")) {
+	
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "se quiser ser passageiro escolha tipo passageiro");
+				//throw new Exception("se quiser ser passageiro escolha tipo passageiro");
+			}
+	
+				User newUser = this.createUser(user);
+				UserAddressesDTO createUserAddresses = userAddressesService.cadastrarUserAddresses(userDTO.userAddressesDTO() ,newUser);
+	
+			    return  userconversor.convertUserToUserDto(newUser, createUserAddresses);
+	
 		}
-
-			User newUser = this.createUser(user);
-			UserAddressesDTO createUserAddresses = userAddressesService.cadastrarUserAddresses(userDTO.userAddressesDTO() ,newUser);
-
-
-		    return  convertUserToUserDto(newUser, createUserAddresses);
-
-	}
 
 
 
 	public UserBaseDTO putCarByDriver(Long idLong, UserBaseDTO userBaseDTO) throws Exception {
-		User user = userRepository.findById(idLong).orElseThrow(() -> new RuntimeException("usuario não encontrado"));
+		
+		User user = this.existUser(idLong);
 		Course course = courseService.validateCourse(userBaseDTO.courseId());
 		Gender gender =  genderService.validateGender(userBaseDTO.genderId());
 		UserType userType = userTypeService.validateUserType(userBaseDTO.userTypeId());
@@ -201,10 +132,9 @@ public class UserService {
 		user.setNome(userBaseDTO.nome());
 		user.setSobrenome(userBaseDTO.sobrenome());
 
-		Boolean existEmail = existeEmail(userBaseDTO.email(), idLong);
-		if(existEmail) {
-			user.setEmail(userBaseDTO.email());
-		}
+		existeEmail(userBaseDTO.email(), idLong);
+	    user.setEmail(userBaseDTO.email());
+	    
 		user.setTelefone(userBaseDTO.telefone());
 		user.setSenha(userBaseDTO.senha());
 		user.setFoto(userBaseDTO.foto());
@@ -214,31 +144,20 @@ public class UserService {
 		user.setSenha(passwordEncoder.encode(userBaseDTO.senha()));
 		createUser(user);
 
-		return convertUserToUserBaseDto(user);
+		return userconversor.convertUserToUserBaseDto(user);
 	}
 
 
 
 	public void deleteUser(Long idLong) throws Exception {
-		User user = userRepository.findById(idLong).orElseThrow(() -> new Exception("Usuario não encontado"));
-
-		try {
-			userRepository.delete(user);
-		} catch (Exception e) {
-			throw new Exception("Erro ao deletar usuario"+ e);
-		}
-
+		User user = this.existUser(idLong);
+		userRepository.delete(user);
 	}
 
 
 	public UserBaseDTO getUser(Long idLong) throws Exception {
-		User user = userRepository.findById(idLong).orElseThrow(() -> new Exception("Usuario não encontado"));
-		return convertUserToUserBaseDto(user);
+		User user = this.existUser(idLong);
+		return userconversor.convertUserToUserBaseDto(user);
 
 	}
-
-
-
-
-
 }

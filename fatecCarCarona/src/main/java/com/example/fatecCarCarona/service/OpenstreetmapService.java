@@ -6,9 +6,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
-
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.fatecCarCarona.dto.OpenstreetmapDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class OpenstreetmapService {
 	 private final String baseUrl = "https://nominatim.openstreetmap.org/search?q=";
-	    public Optional<OpenstreetmapDTO> buscarLocal(String local) {
+	    public OpenstreetmapDTO buscarLocal(String local) {
 	        try {
 	            String localEncoded = URLEncoder.encode(local, StandardCharsets.UTF_8);
 	            String urlString = baseUrl + localEncoded + "&format=json&addressdetails=1"; 
@@ -26,7 +26,10 @@ public class OpenstreetmapService {
 	            conexao.setRequestMethod("GET");
 	            conexao.setRequestProperty("User-Agent", "fatec-carona-app");
 	            if (conexao.getResponseCode() != 200) {
-	                return Optional.empty();
+	            	throw new ResponseStatusException(
+	                        HttpStatus.BAD_GATEWAY,
+	                        "Erro ao consultar serviço de geolocalização"
+	                );
 	            }
 
 	            BufferedReader br = new BufferedReader(new InputStreamReader(conexao.getInputStream()));
@@ -41,13 +44,23 @@ public class OpenstreetmapService {
 	            OpenstreetmapDTO[] resultados = objectMapper.readValue(retorno.toString(), OpenstreetmapDTO[].class);
 
 	            if (resultados.length > 0) {
-	                return Optional.of(resultados[0]); // retorna o primeiro resultado
+	            	
+	            	return resultados[0]; // retorna o primeiro resultado
 	            } else {
-	                 throw new Exception("Endereco não encontrado");
+	            	throw new ResponseStatusException(
+	            	        HttpStatus.NOT_FOUND,
+	            	        "Endereço não encontrado"
+	            	);
 	            }
 
-	        } catch (Exception e) {
-	        	throw new RuntimeException("Erro ao buscar endereço: " + e.getMessage(), e);
+	        } catch (ResponseStatusException e) {
+	            throw e; // mantém o erro original
+	        }
+	        catch (Exception e) {
+	            throw new ResponseStatusException(
+	                HttpStatus.BAD_GATEWAY,
+	                "Erro ao buscar endereço externo"
+	            );
 	        }
 	    }
 }

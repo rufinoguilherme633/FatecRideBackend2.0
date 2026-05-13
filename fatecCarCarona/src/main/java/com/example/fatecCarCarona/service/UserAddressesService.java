@@ -5,8 +5,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.example.fatecCarCarona.converter.UserAddressesConversor;
 import com.example.fatecCarCarona.dto.OpenstreetmapDTO;
 import com.example.fatecCarCarona.dto.UserAddressesDTO;
 import com.example.fatecCarCarona.dto.UserAddressesResponseDTO;
@@ -18,8 +21,6 @@ import com.example.fatecCarCarona.repository.UserAddressesRepository;
 
 @Service
 public class UserAddressesService {
-
-
 	@Autowired
 	UserAddressesRepository userAddressesRepository;
 	@Autowired
@@ -28,8 +29,10 @@ public class UserAddressesService {
 	OpenstreetmapService openstreetmapService;
 	@Autowired
 	ViaCepService viaCepService;
+	@Autowired
+	UserAddressesConversor userAddressesConversor;
 
-	public Optional<OpenstreetmapDTO> buscar(String local) {
+	public OpenstreetmapDTO buscar(String local) {
 
 		return openstreetmapService.buscarLocal(local);
 	}
@@ -40,51 +43,21 @@ public class UserAddressesService {
 	}
 
 
-	public UserAddressesDTO convertUserAddressesToDTO(UserAddresses saved) {
-
-	    return new UserAddressesDTO(
-	        saved.getCity().getId(),
-	        saved.getLogradouro(),
-	        saved.getNumero(),
-	        saved.getBairro(),
-	        saved.getCep()
-	    );
-	}
-
-
-	public UserAddresses convertDTOTOUserAddresses(UserAddressesDTO userAddressesDTO, User user, City city,String latitude, String longitude ) {
-	    UserAddresses userAddresses = new UserAddresses();
-	    userAddresses.setUser(user);
-	    userAddresses.setCity(city);
-	    userAddresses.setLogradouro(userAddressesDTO.logradouro());
-	    userAddresses.setNumero(userAddressesDTO.numero());
-	    userAddresses.setBairro(userAddressesDTO.bairro());
-	    userAddresses.setCep(userAddressesDTO.cep());
-	    userAddresses.setLatitude(latitude);
-	    userAddresses.setLongitude(longitude);
-
-		return userAddresses;
-	}
-
-
-
+	
 	public UserAddresses validateUserAddressesViaCep(User user, UserAddressesDTO userAddressesDTO ) {
 	    City city = cityService.validateCity(userAddressesDTO.cityId());
 
-	    Optional<ViaCepDTO> viaCepDTO = viaCepService.buscarCep(userAddressesDTO.cep());
+	  
+	     Optional<ViaCepDTO> viaCepDTO = viaCepService.buscarCep(userAddressesDTO.cep());
 		if(viaCepDTO.isEmpty()) {
-	        throw new IllegalArgumentException("CEP destino não encontrado.");
+			throw new ResponseStatusException(
+		            HttpStatus.BAD_REQUEST,
+		            "CEP destino não encontrado"
+		    );
 
 		}
-		//boolean isValid =
-		//		viaCepDTO.get().localidade().equals(city.getNome()) &&
-		//		viaCepDTO.get().logradouro().equals(userAddressesDTO.logradouro()) &&
-		//		viaCepDTO.get().bairro().equals(userAddressesDTO.bairro()) ;
+	   
 
-		//if(!isValid) {
-	     //   throw new IllegalArgumentException("Endereço não corresponde ao CEP.");
-
-		//}
 	    String localString =
 	    	    userAddressesDTO.logradouro() + " " +
 	    	    city.getNome();
@@ -93,14 +66,10 @@ public class UserAddressesService {
 	    System.out.println(localString);
 
 
-	    Optional<OpenstreetmapDTO> resultado = buscar(localString);
-	    if (resultado.isEmpty()) {
-	        throw new RuntimeException("Erro ao buscar endereço: Endereco não encontrado");
-	    }
-
-
-	    UserAddresses userAddresses = convertDTOTOUserAddresses(userAddressesDTO,user, city,resultado.get().lat(),resultado.get().lon());
-
+	    //OpenstreetmapDTO resultado = buscar(localString);
+	  
+	    //UserAddresses userAddresses = userAddressesConversor.convertDTOTOUserAddresses(userAddressesDTO,user, city,resultado.lat(),resultado.lon());
+	    UserAddresses userAddresses = userAddressesConversor.convertDTOTOUserAddresses(userAddressesDTO,user, city);
 	    return userAddresses;
 
 	}
@@ -110,7 +79,7 @@ public class UserAddressesService {
 	public UserAddressesDTO cadastrarUserAddresses(UserAddressesDTO userAddressesDTO, User user) {
 		UserAddresses address = validateUserAddressesViaCep(user, userAddressesDTO);
         UserAddresses saved = createUserAddresses(address);
-        return convertUserAddressesToDTO(saved);
+        return userAddressesConversor.convertUserAddressesToDTO(saved);
 	}
 
 
@@ -130,10 +99,18 @@ public class UserAddressesService {
 
 
 	public UserAddressesDTO updateMyAddresses(Long idLong, Long idAddres,UserAddressesDTO userAddressesDTO ) throws Exception {
-		UserAddresses addresses = userAddressesRepository.findById(idAddres).orElseThrow(() -> new RuntimeException("endereço não encontrado"));
+		UserAddresses addresses = userAddressesRepository.findById(idAddres)
+			    .orElseThrow(() -> new ResponseStatusException(
+			            HttpStatus.NOT_FOUND,
+			            "Endereço não encontrado"
+			    ));
 
 		if(!addresses.getUser().getId().equals(idLong)) {
-			throw new Exception("Esse endereçõ não está associado a esse usuario");
+			throw new ResponseStatusException(
+		            HttpStatus.FORBIDDEN,
+		            "Esse endereço não pertence ao usuário"
+		    );
+
 
 		}
 
@@ -142,19 +119,11 @@ public class UserAddressesService {
 	    Optional<ViaCepDTO> viaCepDTO = viaCepService.buscarCep(userAddressesDTO.cep());
 
 		if(viaCepDTO.isEmpty()) {
-	        throw new IllegalArgumentException("CEP não encontrado.");
-
-		}
-		//boolean isValid =
-		//		viaCepDTO.get().localidade().equals(city.getNome()) &&
-		//		viaCepDTO.get().logradouro().equals(userAddressesDTO.logradouro()) &&
-		//		viaCepDTO.get().bairro().equals(userAddressesDTO.bairro()) ;
-
-		//if(!isValid) {
-	     //   throw new IllegalArgumentException("Endereço não corresponde ao CEP.");
-
-		//}
-
+			 throw new ResponseStatusException(
+			            HttpStatus.BAD_REQUEST,
+			            "CEP não encontrado"
+			    );
+			}
 		addresses.setCep(city.getNome());
 		addresses.setLogradouro(userAddressesDTO.logradouro());
 		addresses.setNumero(userAddressesDTO.numero());
@@ -166,16 +135,11 @@ public class UserAddressesService {
 	    	    city.getNome();
 
 
-	    Optional<OpenstreetmapDTO> resultado = buscar(localString);
-	    if (resultado.isEmpty()) {
-	        throw new RuntimeException("Erro ao buscar endereço: Endereco não encontrado");
-	    }
-
+	    OpenstreetmapDTO resultado = buscar(localString);
+	    
 
 	    userAddressesRepository.save(addresses);
-	    UserAddressesDTO addressesDTO =  convertUserAddressesToDTO(addresses);
-
-
+	    UserAddressesDTO addressesDTO =  userAddressesConversor.convertUserAddressesToDTO(addresses);
 		return addressesDTO;
 	}
 }

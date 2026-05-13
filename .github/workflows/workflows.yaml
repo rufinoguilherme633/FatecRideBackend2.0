@@ -1,0 +1,85 @@
+name: CI/CD Pipeline backend principal
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout test code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Run Tests
+        working-directory: ./fatecCarCarona
+        run: |
+          chmod +x mvnw
+          ./mvnw clean test
+
+  build:
+    name: Build Jar
+    runs-on: ubuntu-latest
+    needs: tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Build Jar
+        working-directory: ./fatecCarCarona
+        run: |
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
+
+  #docker:
+  #  name: Docker Build
+  #  runs-on: ubuntu-latest
+  #  needs: build
+
+  #  steps:
+  #    - name: Checkout code
+  #      uses: actions/checkout@v4
+
+  #    - name: Docker Compose Build
+  #      run: |
+  #        docker compose down -v
+  #        docker compose up --build -d
+
+  docker:
+    name: Docker Hub Push
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Build  Docker Image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/fatec-carona-api:latest ./fatecCarCarona
+
+      - name: Push to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/fatec-carona-api:latest

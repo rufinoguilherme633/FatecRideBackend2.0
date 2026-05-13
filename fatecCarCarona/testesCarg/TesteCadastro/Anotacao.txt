@@ -1,0 +1,11 @@
+apoós comentar a parte de longitude e latitude no cadastro de usuariu, com uma pessoa
+
+até aqui não suporta 5 cadastros por minuto
+
+📊 Antes vs Depois
+Métrica	Antes	Depois	Diferença
+avg	2.5s	1.73s	🚀 -0.77s (~31% mais rápido)
+med	2.5s	1.73s	🚀 melhorou
+max	2.5s	1.73s	🚀 melhorou
+p95	2.5s	1.73s	🚀 melhorou
+status	100% ok	100% ok	👍 estável

@@ -105,9 +105,6 @@ public class AgendarRideDiaSemanaService {
 		
 		List<AgendarRideDiaSemana> minhalista = agendarRideDiaSemanaRepository.findByRideDriverIdAndAtivoTrue(user.getId());
 		
-		
-
-
 		  List<AgendarRideDiaSemana> lista =
 			        agendarRideDiaSemanaRepository.findByRideDriverIdAndAtivoTrue(user.getId());		
 		

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.fatecCarCarona.dto.AgendarRideDiaSemanaDTO;
 import com.example.fatecCarCarona.dto.AgendarRideIntervaloDiasDTO;
+import com.example.fatecCarCarona.entity.AgendarRideIntervaloDias;
 import com.example.fatecCarCarona.entity.User;
 import com.example.fatecCarCarona.service.AgendarRideIntervaloDiasService;
 import com.example.fatecCarCarona.service.TokenService;
@@ -47,10 +48,10 @@ public class AgendarRideIntervaloDiasController {
 	}
 	
 	@GetMapping
-	public ResponseEntity<List<AgendarRideIntervaloDiasDTO>> pegarTodos(@RequestHeader("Authorization") String authHeader) {
+	public List<AgendarRideIntervaloDias> pegarTodos(@RequestHeader("Authorization") String authHeader) {
 		Long idLong = tokenService.extractUserIdFromHeader(authHeader);
 
-		List<AgendarRideIntervaloDiasDTO> todos=  agendarRideIntervaloDiasService.pegarTodos(idLong);
-		return ResponseEntity.ok(todos);
+		List<AgendarRideIntervaloDias> todos=  agendarRideIntervaloDiasService.pegarTodos(idLong);
+		return todos;
 	}
 }

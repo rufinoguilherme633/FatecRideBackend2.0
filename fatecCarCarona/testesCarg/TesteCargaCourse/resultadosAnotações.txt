@@ -1,0 +1,94 @@
+1 -usando query
+2 usando JPA
+
+PS C:\Users\guilherme\Downloads\FatecRideBackend2.0\fatecCarCarona\testesCarg> k6 run .\testeCourse.js
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: .\testeCourse.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 10 max VUs, 40s max duration (incl. graceful stop):
+              * default: 10 looping VUs for 10s (gracefulStop: 30s)
+
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 200     19.509649/s
+    checks_succeeded...: 100.00% 200 out of 200
+    checks_failed......: 0.00%   0 out of 200
+
+    ✓ status é 200
+    ✓ tem resposta
+
+    HTTP
+    http_req_duration..............: avg=19.07ms min=6.58ms med=12.15ms max=69.2ms p(90)=48.34ms p(95)=64.01ms
+      { expected_response:true }...: avg=19.07ms min=6.58ms med=12.15ms max=69.2ms p(90)=48.34ms p(95)=64.01ms
+    http_req_failed................: 0.00%  0 out of 100
+    http_reqs......................: 100    9.754824/s
+
+    EXECUTION
+    iteration_duration.............: avg=1.02s   min=1s     med=1.01s   max=1.08s  p(90)=1.06s   p(95)=1.07s  
+    iterations.....................: 100    9.754824/s
+    vus............................: 10     min=10       max=10
+    vus_max........................: 10     min=10       max=10
+
+    NETWORK
+    data_received..................: 53 kB  5.1 kB/s
+    data_sent......................: 8.1 kB 790 B/s
+
+
+
+
+running (10.3s), 00/10 VUs, 100 complete and 0 interrupted iterations
+default ✓ [======================================] 10 VUs  10s
+PS C:\Users\guilherme\Downloads\FatecRideBackend2.0\fatecCarCarona\testesCarg> k6 run .\testeCourse.js
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: .\testeCourse.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 10 max VUs, 40s max duration (incl. graceful stop):
+              * default: 10 looping VUs for 10s (gracefulStop: 30s)
+
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 200     19.38081/s
+    checks_succeeded...: 100.00% 200 out of 200
+    checks_failed......: 0.00%   0 out of 200
+
+    ✓ status é 200
+    ✓ tem resposta
+
+    HTTP
+    http_req_duration..............: avg=25.45ms min=10.52ms med=20.33ms max=69.38ms p(90)=46.18ms p(95)=55.94ms
+      { expected_response:true }...: avg=25.45ms min=10.52ms med=20.33ms max=69.38ms p(90)=46.18ms p(95)=55.94ms
+    http_req_failed................: 0.00%  0 out of 100
+    http_reqs......................: 100    9.690405/s
+
+    EXECUTION
+    iteration_duration.............: avg=1.02s   min=1.01s   med=1.02s   max=1.07s   p(90)=1.05s   p(95)=1.06s  
+    iterations.....................: 100    9.690405/s
+    vus............................: 10     min=10       max=10
+    vus_max........................: 10     min=10       max=10
+
+    NETWORK
+    data_received..................: 53 kB  5.1 kB/s
+    data_sent......................: 8.1 kB 785 B/s
+

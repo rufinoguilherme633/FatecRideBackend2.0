@@ -22,22 +22,12 @@ public class OpenstreetmapController {
 	@Autowired
 	OpenstreetmapService openstreetmapService;
 
+	
 	@GetMapping("/local")
-	public ResponseEntity<?> buscarLocal(@RequestParam String local) {
-
-	     try { 
-	         Optional<OpenstreetmapDTO> resultado = 
-	openstreetmapService.buscarLocal(local); 
-	         if (resultado.isPresent()) { 
-	             return ResponseEntity.ok(resultado.get()); 
-	         } else { 
-	             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Local não encontrado"); 
-	         } 
-	     } catch (Exception e) { 
-	         e.printStackTrace(); 
-	         return 
-	ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao buscar localização"); 
-	     } 
-
-	}
+    public ResponseEntity<OpenstreetmapDTO> buscarLocal(@RequestParam String local) {
+        // CORRIGIDO: buscarLocal() retorna OpenstreetmapDTO direto, não Optional
+        // Se não encontrar, o próprio service já lança ResponseStatusException NOT_FOUND
+        OpenstreetmapDTO resultado = openstreetmapService.buscarLocal(local);
+        return ResponseEntity.ok(resultado);
+    }
 }

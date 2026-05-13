@@ -17,7 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 	public class ViaCepService {
 
 
-		private final String baseUrl = "https://viacep.com.br/ws/";
+		private static final String baseUrl = "https://viacep.com.br/ws/";
 
 		public Optional<ViaCepDTO> buscarCep(String cep){
 

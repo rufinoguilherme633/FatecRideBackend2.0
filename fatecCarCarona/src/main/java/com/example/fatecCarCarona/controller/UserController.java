@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.example.fatecCarCarona.dto.LoginDTO;
 import com.example.fatecCarCarona.dto.LoginReposnseDTO;
@@ -36,22 +37,24 @@ public class UserController {
 	private  PasswordEncoder passwordEncoder;
 	@Autowired
 	private  TokenService tokenService;
+
 	@PostMapping("/criarMotorista")
-
-
 	public ResponseEntity<UserDriverDTO> createDriver(@RequestBody UserDriverDTO userDriverDTO) throws Exception{
 		UserDriverDTO driver = userService.cadastrarDrivers(userDriverDTO);
 		return new ResponseEntity<>(driver,HttpStatus.CREATED);
 	}
+	
 	@PostMapping("/criarPassageiro")
 	public ResponseEntity<UserDTO> createUser(@RequestBody UserDTO userDTO) throws Exception{
 		UserDTO user = userService.cadastrarUser(userDTO);
 		return new ResponseEntity<>(user,HttpStatus.CREATED);
 	}
+	
 	@PostMapping("/login")
 	public ResponseEntity<?> login(@RequestBody LoginDTO body) {
 	    User user = this.userRepository.findByEmail(body.email())
-	        .orElseThrow(() -> new RuntimeException("User not found"));
+	    		.orElseThrow(() -> new ResponseStatusException(
+	    		        HttpStatus.NOT_FOUND, "usuario não encontrado"));
 	    
 	    if(passwordEncoder.matches(body.senha(), user.getSenha())) {
 	        String token = tokenService.generateToken(user);

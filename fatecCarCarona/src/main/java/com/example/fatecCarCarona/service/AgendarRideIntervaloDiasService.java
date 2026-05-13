@@ -79,13 +79,16 @@ public class AgendarRideIntervaloDiasService {
 
 	}
 
-	public List<AgendarRideIntervaloDiasDTO> pegarTodos(Long idLong) {
+	public List<AgendarRideIntervaloDias> pegarTodos(Long idLong) {
 		User user = userRepository.findById(idLong).orElseThrow(() -> new ResponseStatusException(
 	            HttpStatus.NOT_FOUND, "usuario não encontrado"));
 		
-		List<AgendarRideDiaSemana> minhalista = agendarRideIntervaloDiasRepository.findByRideDriverIdAndAtivoTrue(user.getId());
+		//List<AgendarRideDiaSemana> minhalista = agendarRideIntervaloDiasRepository.findByRideDriverIdAndAtivoTrue(user.getId());
+		List<AgendarRideIntervaloDias> minhalista = agendarRideIntervaloDiasRepository.findByRideDriverIdAndAtivoTrue(user.getId());
 		
-		return null;
+		
+		
+		return minhalista;
 	}
 
 }

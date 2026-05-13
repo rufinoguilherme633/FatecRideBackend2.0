@@ -1,0 +1,51 @@
+comentado a parte do OneStreepMapping 
+ning (16.2s), 0/5 VUs, 42 complete and 0 interrupted iterations
+default ✓ [======================================] 5 VUs  15s
+PS C:\Users\guilherme\Downloads\FatecRideBackend2.0\fatecCarCarona\testesCarg> k6 run .\TesteCadastro.js
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: .\TesteCadastro.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 5 max VUs, 45s max duration (incl. graceful stop):
+              * default: 5 looping VUs for 15s (gracefulStop: 30s)
+
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 50      3.111934/s
+    checks_succeeded...: 100.00% 50 out of 50
+    checks_failed......: 0.00%   0 out of 50
+
+    ✓ status é 200 ou 201
+
+    HTTP
+    http_req_duration..............: avg=591.18ms min=269.34ms med=362.69ms max=2.32s p(90)=947.16ms p(95)=2.32s
+      { expected_response:true }...: avg=591.18ms min=269.34ms med=362.69ms max=2.32s p(90)=947.16ms p(95)=2.32s
+    http_req_failed................: 0.00% 0 out of 50
+    http_reqs......................: 50    3.111934/s
+
+    EXECUTION
+    iteration_duration.............: avg=1.59s    min=1.27s    med=1.36s    max=3.35s p(90)=1.95s    p(95)=3.35s
+    iterations.....................: 50    3.111934/s
+    vus............................: 4     min=4       max=5
+    vus_max........................: 5     min=5       max=5
+
+    NETWORK
+    data_received..................: 39 kB 2.4 kB/s
+    data_sent......................: 24 kB 1.5 kB/s
+
+
+
+
+running (16.1s), 0/5 VUs, 50 complete and 0 interrupted iterations
+default ✓ [======================================] 5 VUs  15s
+PS C:\Users\guilherme\Downloads\FatecRideBackend2.0\fatecCarCarona\testesCarg> 

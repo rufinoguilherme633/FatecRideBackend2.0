@@ -1,0 +1,21 @@
+docker-compose down -v 
+docker-compose up --build
+
+docker-compose up --build
+=-----
+
+anotação 
+
+tirar latitude e longitude na hora de inserir cadastro, verificar se adianta performance
+
+
+
+----
+comandos 
+docker exec -it mysql-carona mysql -u root -p
+
+root
+
+
+
+
