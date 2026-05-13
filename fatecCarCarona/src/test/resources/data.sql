@@ -61,5 +61,5 @@ MERGE INTO veiculos (id_veiculo, id_usuario, modelo, marca, placa, cor, ano, vag
 MERGE INTO caronas (id_carona, id_motorista, id_origem, id_destino, data_hora, vagas_disponiveis, id_status_carona, id_veiculo) VALUES
     (1, 2, 1, 1, TIMESTAMP '2026-04-28 10:00:00', 3, 1, 1);
 
-MERGE INTO solicitacoes (id_solicitacao, id_carona, id_passageiro, id_origem, id_destino, data_solicitacao, id_status_solicitacao, tentativa_atual, id_status_pipeline) VALUES
-    (1, 1, 1, 1, 1, TIMESTAMP '2026-04-28 09:55:00', 1, 0, 1);
+MERGE INTO solicitacoes (id_solicitacao, id_carona, id_passageiro, id_origem, id_destino, data_solicitacao, id_status_solicitacao, tentativa_atual, id_status_pipeline, version) VALUES
+    (1, 1, 1, 1, 1, TIMESTAMP '2026-04-28 09:55:00', 1, 0, 1, 0);

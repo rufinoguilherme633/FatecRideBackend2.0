@@ -26,8 +26,8 @@ public interface PassageRequestsRepository extends JpaRepository<PassageRequests
 	@Query("""
 		    SELECT p FROM PassageRequests p 
 		    JOIN p.carona c 
-		    WHERE p.status.id IN (1, 2)
-		      AND c.status.id = 1
+		    WHERE p.status.nome IN ('pendente', 'aceita', 'aguardando_resposta')
+		      AND c.status.nome = 'ativa'
 		      AND c.driver.id = :driverId
 
 		""")

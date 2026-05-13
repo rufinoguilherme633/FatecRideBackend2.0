@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import org.aspectj.weaver.ast.Or;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -29,12 +28,14 @@ import com.example.fatecCarCarona.dto.ViaCepDTO;
 import com.example.fatecCarCarona.entity.City;
 import com.example.fatecCarCarona.entity.Destination;
 import com.example.fatecCarCarona.entity.Origin;
+import com.example.fatecCarCarona.entity.PassageRequestQueue;
 import com.example.fatecCarCarona.entity.PassageRequests;
 import com.example.fatecCarCarona.entity.Ride;
 import com.example.fatecCarCarona.entity.RideStatus;
 import com.example.fatecCarCarona.entity.User;
 import com.example.fatecCarCarona.entity.Vehicle;
 
+import com.example.fatecCarCarona.repository.PassageRequestQueueRepository;
 import com.example.fatecCarCarona.repository.PassageRequestsRepository;
 import com.example.fatecCarCarona.repository.RideRepository;
 import com.example.fatecCarCarona.repository.RideStatusRepository;
@@ -66,6 +67,12 @@ public class RideService {
 	
 	@Autowired
 	PassageRequestsStatusService passageRequestsStatusService;
+
+	@Autowired
+	PassageRequestQueueRepository passageRequestQueueRepository;
+
+	@Autowired
+	PassageRequestAutomaticService passageRequestAutomaticService;
 
 	private void validateAddress(String cep, String cidade, String logradouro, String bairro) {
 		Optional<ViaCepDTO> viaCepDTO = viaCepService.buscarCep(cep);
@@ -642,6 +649,34 @@ public class RideService {
 		    if(ride.getAvailableSeats() <= 0) {
 		    	throw new SecurityException("vagas disponiveis nao podem ser igual a 0");
 		    }
+
+		    // Compatibilidade: se existir entrada no fluxo automático, delega para atualizar
+		    // fila/pipeline corretamente (aceita + rejeição dos demais motoristas).
+		    Optional<PassageRequestQueue> filaAutomatica = passageRequestQueueRepository
+		    		.findBySolicitacaoIdOrderByOrdemFilaAsc(id_solicitacao)
+		    		.stream()
+		    		.filter(f -> f.getMotorista() != null && driverId.equals(f.getMotorista().getId()))
+		    		.filter(f -> f.getRide() != null && id_carona.equals(f.getRide().getId()))
+		    		.filter(f -> f.getStatus() != null && (
+		    				"enviada".equalsIgnoreCase(f.getStatus().getNome())
+		    				|| "aceita".equalsIgnoreCase(f.getStatus().getNome())))
+		    		.findFirst();
+
+		    if (filaAutomatica.isPresent()) {
+		    	try {
+		    		passageRequestAutomaticService.handleMotoristaAceita(
+		    				filaAutomatica.get().getId(),
+		    				id_solicitacao,
+		    				driverId
+		    		);
+		    	} catch (Exception e) {
+		    		throw new IllegalStateException("Erro ao sincronizar aceite com a fila automática: " + e.getMessage(), e);
+		    	}
+
+		    	ride.setAvailableSeats(ride.getAvailableSeats() -1);
+		    	rideRepository.save(ride);
+		    	return;
+		    }
 		    
 		    
 		    if (!ride.getDriver().getId().equals(user.getId())) {
@@ -650,20 +685,25 @@ public class RideService {
 		    
 		    
 		    
-		    if(!passageRequest.getCarona().getId().equals(ride.getId())) {
+		    if (passageRequest.getCarona() == null) {
+		    	passageRequest.setCarona(ride);
+		    } else if (!passageRequest.getCarona().getId().equals(ride.getId())) {
 		    	throw new SecurityException("essa solicitacao não foi solicitada a essa carona");
 		    }
 		    
 		    
 		    
 		    
-		    passageRequest.setStatus(passageRequestsStatusService.findByNome("aceita"));
-		    ride.setAvailableSeats(ride.getAvailableSeats() -1);
-		    
-		   
-		  
-		    
-		    
+	    	passageRequest.setStatus(passageRequestsStatusService.findByNome("aceita"));
+	    	ride.setAvailableSeats(ride.getAvailableSeats() -1);
+
+	    	passageRequestsRepository.save(passageRequest);
+	    	rideRepository.save(ride);
+
+
+
+
+
 	}
 	
 	@Transactional(rollbackOn = Exception.class)
