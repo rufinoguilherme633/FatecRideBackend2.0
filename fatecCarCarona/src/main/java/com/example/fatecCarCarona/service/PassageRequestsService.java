@@ -48,7 +48,7 @@ public class PassageRequestsService {
 	PassageRequestsRepository passageRequestsRepository;
 	private Optional<OpenstreetmapDTO> buscarLocalizacao(String endereco) throws Exception {
 
-		Optional<OpenstreetmapDTO> resultado = openstreetmapService.buscarLocal(endereco);
+		Optional<OpenstreetmapDTO> resultado = Optional.ofNullable(openstreetmapService.buscarLocal(endereco));
 
 		if (resultado.isEmpty()) {
 			throw new Exception("Endereço não encontrado no OpenStreetMap: " + endereco);

@@ -94,7 +94,7 @@ public class RideService {
 
 	private Optional<OpenstreetmapDTO> buscarLocalizacao(String endereco) {
 		String enderecoEncoded = URLEncoder.encode(endereco, StandardCharsets.UTF_8);
-		Optional<OpenstreetmapDTO> resultado = openstreetmapService.buscarLocal(enderecoEncoded);
+		Optional<OpenstreetmapDTO> resultado = Optional.ofNullable(openstreetmapService.buscarLocal(enderecoEncoded));
 
 		if (resultado.isEmpty()) {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND,"Endereço não encontrado no OpenStreetMap: " + endereco);
@@ -204,7 +204,7 @@ public class RideService {
 
 
 	public Optional<OpenstreetmapDTO> queryOpenStreetMapByAddress(String local) {
-		return openstreetmapService.buscarLocal(local);
+		return Optional.ofNullable(openstreetmapService.buscarLocal(local));
 
 	}
 
