@@ -27,6 +27,9 @@ public class SecurityConfig {
     @Autowired
     CustomUserDetailsService userDetailsService;
 
+    @Autowired
+    SecurityFilter securityFilter;
+
     @Bean
     public CorsFilter corsFilter() {
         return new CorsFilter(corsConfigurationSource());
