@@ -43,10 +43,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
             br.close();
 
-            ObjectMapper objectMapper = new ObjectMapper();
-            ViaCepDTO resultado = objectMapper.readValue(retorno.toString(), ViaCepDTO.class);
+			String json = retorno.toString();
 
-            return Optional.ofNullable(resultado);
+			// ViaCEP returns 200 with {"erro": true} when CEP is not found.
+			if (json.contains("\"erro\"")) {
+				// include the raw response to help debugging when a CEP is not found
+				throw new ResponseStatusException(HttpStatus.NOT_FOUND, "CEP não encontrado: " + cep + " - viaCep response: " + json);
+			}
+
+			com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+			// Ignore unknown properties just in case the API returns extra fields
+			objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+			ViaCepDTO resultado = objectMapper.readValue(json, ViaCepDTO.class);
+
+			return Optional.ofNullable(resultado);
 
         } catch (Exception e) {
         	//throw new RuntimeException("Erro ao buscar endereço: " + e.getMessage(), e);
