@@ -41,6 +41,25 @@ services:
       - SPRING_DATASOURCE_PASSWORD=root
       - MONGO_URI=mongodb://dbMongo:27017/backendfateccarona
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+    depends_on:
+      - backend_java
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   mysql_data:
   mongo_data:
