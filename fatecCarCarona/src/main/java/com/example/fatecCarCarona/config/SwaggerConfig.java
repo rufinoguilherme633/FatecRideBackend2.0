@@ -7,7 +7,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import org.springframework.context.annotation.Configuration;
 
-@Configuration
+/**@Configuration
 @OpenAPIDefinition(
     info = @Info(title = "API Fatec Car Carona", version = "v1"),
     security = @SecurityRequirement(name = "bearerAuth")
@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
     type = SecuritySchemeType.HTTP,
     scheme = "bearer",
     bearerFormat = "JWT"
-)
+)*/
 public class SwaggerConfig {
     // Apenas as anotações já bastam!
 }
