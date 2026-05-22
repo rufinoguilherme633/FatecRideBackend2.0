@@ -10,7 +10,7 @@ public class CorsConfig implements WebMvcConfigurer{
 	@Override
 	public void addCorsMappings(CorsRegistry registry) {
 		registry.addMapping("/**")
-			.allowedOrigins("http://localhost:3000","http://localhost:3001","https://fatec-ride-frontend2-0-hnup7hh8p-caronafatec-hashs-projects.vercel.app")
+			.allowedOrigins("http://localhost:3000","http://localhost:3001","https://*.vercel.app")
 			.allowedMethods("GET","POST","DELETE","PUT","PATCH")
 			.allowCredentials(true);
 	}
