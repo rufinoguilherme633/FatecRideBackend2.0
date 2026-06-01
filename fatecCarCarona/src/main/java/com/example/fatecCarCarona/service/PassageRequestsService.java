@@ -219,7 +219,7 @@ public class PassageRequestsService {
 
 	}
 	public Page<CompletedPassengerRequestDTO> buscarSolicitacoesConcluidas(Long userId, int page, int size) {
-		Page<PassageRequests> paginaDeSolicitacoes = passageRequestsRepository.findPassagerFinalizadas(
+		Page<PassageRequests> paginaDeSolicitacoes = passageRequestsRepository.findPassagerConcluidas( // Alterado de findPassagerFinalizadas para findPassagerConcluidas
 				userId,
 				PageRequest.of(page, size)
 		);

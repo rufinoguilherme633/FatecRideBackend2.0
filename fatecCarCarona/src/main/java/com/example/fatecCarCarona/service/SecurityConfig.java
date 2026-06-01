@@ -69,6 +69,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/users").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/users").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/users").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/solicitacao/concluidas").authenticated()
                         .anyRequest().authenticated()
 
                 )
@@ -91,7 +92,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:3001"));
+        config.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true); // permite cookies e headers como Authorization
