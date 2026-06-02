@@ -104,6 +104,29 @@ public class RideService {
 		return resultado;
 	}
 
+	private LocalDateTime validarDataHoraViagem(LocalDateTime dataHoraViagem) {
+		if (dataHoraViagem == null) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"Informe data_hora_viagem no formato ISO-8601 (ex: 2026-05-20T18:30:00)");
+		}
+
+		if (dataHoraViagem.isBefore(LocalDateTime.now().minusMinutes(1))) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+					"A data/hora da carona deve ser atual ou futura.");
+		}
+
+		return dataHoraViagem;
+	}
+
+	private com.example.fatecCarCarona.entity.PassageRequestsStatus obterStatusConcluidaSolicitacao() {
+		// Prefer unaccented status name to match DB seed. Keep fallback for accented.
+		var status = passageRequestsStatusService.findByNome("concluida");
+		if (status == null) {
+			status = passageRequestsStatusService.findByNome("concluída");
+		}
+		return status;
+	}
+
 	private Origin criarOrigem(OriginDTO originDTO, City cidade, OpenstreetmapDTO localizacao) {
 		Origin origem = new Origin();
 		origem.setCity(cidade);
@@ -173,7 +196,7 @@ public class RideService {
 		carona.setDriver(motorista);
 		carona.setOrigin(origemSalva);
 		carona.setDestination(destinoSalvo);
-		carona.setDateTime(LocalDateTime.now());
+		carona.setDateTime(validarDataHoraViagem(dto.data_hora_viagem()));
 		carona.setAvailableSeats(dto.vagas_disponiveis());
 		carona.setStatus(rideStatusService.gellByName("ativa"));
 		carona.setVehicle(veiculo);
@@ -262,7 +285,8 @@ public class RideService {
 	        originDTO,
 	        destinationDTO,
 	        ride.getAvailableSeats(),
-	        ride.getVehicle().getId()
+	        ride.getVehicle().getId(),
+	        ride.getDateTime()
 	    );
 	}
 	@Transactional(rollbackOn = Exception.class)
@@ -333,7 +357,7 @@ public class RideService {
 		ride.setDriver(user);
 		ride.setOrigin(origin);
 		ride.setDestination(destination);
-		ride.setDateTime(LocalDateTime.now());
+		ride.setDateTime(validarDataHoraViagem(dto.data_hora_viagem()));
 		ride.setAvailableSeats(dto.vagas_disponiveis());
 		ride.setStatus(rideStatusService.gellByName("ativa"));
 		ride.setVehicle(vehicle);
@@ -467,7 +491,7 @@ public class RideService {
 	        .orElseThrow(() -> new RuntimeException("Carona não encontrada"));
 
 	    if (ride.getStatus().getNome().equalsIgnoreCase("cancelada") ||
-	        ride.getStatus().getNome().equalsIgnoreCase("concluída")) {
+	        ride.getStatus().getNome().equalsIgnoreCase("concluida")) {
 	        throw new IllegalStateException("Caronas já concluídas ou canceladas não podem ser alteradas.");
 	    }
 
@@ -501,7 +525,7 @@ public class RideService {
 		}
 
 	    if (ride.getStatus().getNome().equalsIgnoreCase("cancelada") ||
-	        ride.getStatus().getNome().equalsIgnoreCase("concluída")) {
+	        ride.getStatus().getNome().equalsIgnoreCase("concluida")) {
 	        throw new IllegalStateException("Caronas já concluídas ou canceladas não podem ser alteradas.");
 	    }
 
@@ -549,6 +573,7 @@ public class RideService {
 	    destinationService.destinationRepository.save(destination);
 
 	    ride.setAvailableSeats(rideDTO.vagas_disponiveis());
+	    ride.setDateTime(validarDataHoraViagem(rideDTO.data_hora_viagem()));
 
 
 	    ride.setVehicle(vehicle); // Associar o novo veículo, se necessário
@@ -571,7 +596,8 @@ public class RideService {
 	            destination.getCity().getNome()
 	        ),
 	        ride.getAvailableSeats(),
-	        ride.getVehicle().getId()
+	        ride.getVehicle().getId(),
+	        ride.getDateTime()
 	    );
 
 	    return response;
@@ -641,7 +667,7 @@ public class RideService {
 		    		.orElseThrow(() -> new RuntimeException("nenhuma solicitação encontrada"));
 		    
 		    if (ride.getStatus().getNome().equalsIgnoreCase("cancelada") ||
-		        ride.getStatus().getNome().equalsIgnoreCase("concluída")) {
+		        ride.getStatus().getNome().equalsIgnoreCase("concluida")) {
 		        throw new IllegalStateException("Caronas já concluídas ou canceladas não podem ser alteradas.");
 		    }
 
@@ -650,62 +676,39 @@ public class RideService {
 		    	throw new SecurityException("vagas disponiveis nao podem ser igual a 0");
 		    }
 
-		    // Compatibilidade: se existir entrada no fluxo automático, delega para atualizar
-		    // fila/pipeline corretamente (aceita + rejeição dos demais motoristas).
-		    Optional<PassageRequestQueue> filaAutomatica = passageRequestQueueRepository
-		    		.findBySolicitacaoIdOrderByOrdemFilaAsc(id_solicitacao)
-		    		.stream()
-		    		.filter(f -> f.getMotorista() != null && driverId.equals(f.getMotorista().getId()))
-		    		.filter(f -> f.getRide() != null && id_carona.equals(f.getRide().getId()))
-		    		.filter(f -> f.getStatus() != null && (
-		    				"enviada".equalsIgnoreCase(f.getStatus().getNome())
-		    				|| "aceita".equalsIgnoreCase(f.getStatus().getNome())))
-		    		.findFirst();
+			// Novo fluxo obrigatório: aceite deve ocorrer somente via fila automática.
+			Optional<PassageRequestQueue> filaAutomatica = passageRequestQueueRepository
+					.findBySolicitacaoIdOrderByOrdemFilaAsc(id_solicitacao)
+					.stream()
+					.filter(f -> f.getMotorista() != null && driverId.equals(f.getMotorista().getId()))
+					.filter(f -> f.getRide() != null && id_carona.equals(f.getRide().getId()))
+					.filter(f -> f.getStatus() != null && (
+							"enviada".equalsIgnoreCase(f.getStatus().getNome())
+							|| "aceita".equalsIgnoreCase(f.getStatus().getNome())))
+					.findFirst();
 
-		    if (filaAutomatica.isPresent()) {
-		    	try {
-		    		passageRequestAutomaticService.handleMotoristaAceita(
-		    				filaAutomatica.get().getId(),
-		    				id_solicitacao,
-		    				driverId
-		    		);
-		    	} catch (Exception e) {
-		    		throw new IllegalStateException("Erro ao sincronizar aceite com a fila automática: " + e.getMessage(), e);
-		    	}
+			if (filaAutomatica.isPresent()) {
+				try {
+					passageRequestAutomaticService.handleMotoristaAceita(
+							filaAutomatica.get().getId(),
+							id_solicitacao,
+							driverId
+					);
+				} catch (Exception e) {
+					throw new IllegalStateException("Erro ao sincronizar aceite com a fila automática: " + e.getMessage(), e);
+				}
 
-		    	ride.setAvailableSeats(ride.getAvailableSeats() -1);
-		    	rideRepository.save(ride);
-		    	return;
-		    }
-		    
-		    
-		    if (!ride.getDriver().getId().equals(user.getId())) {
-		        throw new SecurityException("Esta carona não pertence a este motorista.");
-		    }
-		    
-		    
-		    
-		    if (passageRequest.getCarona() == null) {
-		    	passageRequest.setCarona(ride);
-		    } else if (!passageRequest.getCarona().getId().equals(ride.getId())) {
-		    	throw new SecurityException("essa solicitacao não foi solicitada a essa carona");
-		    }
-		    
-		    
-		    
-		    
-	    	passageRequest.setStatus(passageRequestsStatusService.findByNome("aceita"));
-	    	ride.setAvailableSeats(ride.getAvailableSeats() -1);
+				ride.setAvailableSeats(ride.getAvailableSeats() -1);
+				rideRepository.save(ride);
+				return;
+			}
 
-	    	passageRequestsRepository.save(passageRequest);
-	    	rideRepository.save(ride);
+			// Se não houver entrada na fila automática, o fluxo legado foi removido.
+			throw new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
+					"Aceite somente suportado via fluxo automático. Use /solicitacao/automatico/aceitar.");
 
+		}
 
-
-
-
-	}
-	
 	@Transactional(rollbackOn = Exception.class)
 	public void finalizarCarona(Long rideId, Long driverId) {
 	    // 1. Buscar e validar usuário
@@ -723,28 +726,56 @@ public class RideService {
 
 	    // 4. Verificar se carona já está finalizada ou cancelada
 	    if (ride.getStatus().getNome().equalsIgnoreCase("cancelada") ||
-	        ride.getStatus().getNome().equalsIgnoreCase("concluída")) {
+	        ride.getStatus().getNome().equalsIgnoreCase("concluida")) {
 	        throw new IllegalStateException("Esta carona já foi finalizada ou cancelada.");
 	    }
 
 	    // 5. Atualizar status da carona para CONCLUÍDA
-	    RideStatus statusConcluida = rideStatusRepository.findByNome("concluída");
+	    RideStatus statusConcluida = rideStatusRepository.findByNome("concluida");
 	    ride.setStatus(statusConcluida);
 	    rideRepository.save(ride);
 
-	    // 6. Atualizar todas as solicitações ACEITAS para CONCLUÍDA
-	    List<PassageRequests> solicitacoesAceitas = passageRequestsRepository
-	        .findByCaronaIdAndStatusAceita(rideId); // ← Passa apenas o ID da carona
-
-	    if (!solicitacoesAceitas.isEmpty()) {
-	        for (PassageRequests solicitacao : solicitacoesAceitas) {
-	            solicitacao.setStatus(passageRequestsStatusService.findByNome("concluída"));
-	            passageRequestsRepository.save(solicitacao);
-	        }
-	        System.out.println("✅ Atualizadas " + solicitacoesAceitas.size() + " solicitações para CONCLUÍDA");
+	    // 6. Atualizar todas as solicitações ACEITAS para CONCLUÍDA (sem hidratar entidades legadas)
+	    passageRequestsRepository.normalizeNullVersions();
+	    var statusConcluidaSolicitacao = obterStatusConcluidaSolicitacao();
+	    if (statusConcluidaSolicitacao != null) {
+	    	int atualizadas = passageRequestsRepository.concluirSolicitacoesAceitasDaCarona(rideId, statusConcluidaSolicitacao.getId());
+	    	if (atualizadas > 0) {
+	    		System.out.println("✅ Atualizadas " + atualizadas + " solicitações para CONCLUÍDA");
+	    	}
 	    }
 
 	    System.out.println("✅ Carona ID " + rideId + " finalizada com sucesso pelo motorista ID " + driverId);
+	}
+
+	@Transactional
+	public void reconciliarCaronasExpiradas(LocalDateTime limiteFimDaCarona) {
+		passageRequestsRepository.normalizeNullVersions();
+
+		List<Ride> caronasAtivasExpiradas = rideRepository.findByStatusNomeAndDateTimeBefore("ativa", limiteFimDaCarona);
+
+		if (caronasAtivasExpiradas.isEmpty()) {
+			return;
+		}
+
+		RideStatus statusConcluida = rideStatusRepository.findByNome("concluida");
+		RideStatus statusCancelada = rideStatusRepository.findByNome("cancelada");
+		var statusConcluidaSolicitacao = obterStatusConcluidaSolicitacao();
+
+		for (Ride ride : caronasAtivasExpiradas) {
+			boolean possuiAceite = passageRequestsRepository.existsByCaronaIdAndStatusNome(ride.getId(), "aceita");
+
+			if (possuiAceite) {
+				ride.setStatus(statusConcluida);
+							if (statusConcluidaSolicitacao != null) {
+								passageRequestsRepository.concluirSolicitacoesAceitasDaCarona(ride.getId(), statusConcluidaSolicitacao.getId());
+				}
+			} else {
+				ride.setStatus(statusCancelada);
+			}
+
+			rideRepository.save(ride);
+		}
 	}
 
 

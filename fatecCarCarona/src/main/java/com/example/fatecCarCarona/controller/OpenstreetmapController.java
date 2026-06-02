@@ -19,14 +19,12 @@ import com.example.fatecCarCarona.service.OpenstreetmapService;
 @RequestMapping
 public class OpenstreetmapController {
 
-	@Autowired
-	OpenstreetmapService openstreetmapService;
+    @Autowired
+    OpenstreetmapService openstreetmapService;
 
-	
-	@GetMapping("/local")
+
+    @GetMapping("/local")
     public ResponseEntity<OpenstreetmapDTO> buscarLocal(@RequestParam String local) {
-        // CORRIGIDO: buscarLocal() retorna OpenstreetmapDTO direto, não Optional
-        // Se não encontrar, o próprio service já lança ResponseStatusException NOT_FOUND
         OpenstreetmapDTO resultado = openstreetmapService.buscarLocal(local);
         return ResponseEntity.ok(resultado);
     }

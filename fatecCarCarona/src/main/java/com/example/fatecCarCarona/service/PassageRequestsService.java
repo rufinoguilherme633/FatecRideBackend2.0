@@ -46,6 +46,8 @@ public class PassageRequestsService {
 	PassageRequestsStatusService passageRequestsStatusService;
 	@Autowired
 	PassageRequestsRepository passageRequestsRepository;
+	@Autowired
+	PassageRequestAutomaticService passageRequestAutomaticService;
 	private Optional<OpenstreetmapDTO> buscarLocalizacao(String endereco) throws Exception {
 
 		Optional<OpenstreetmapDTO> resultado = Optional.ofNullable(openstreetmapService.buscarLocal(endereco));
@@ -198,6 +200,7 @@ public class PassageRequestsService {
 		return passageRequestsCreate;
 	}
 
+	@Transactional
 	public void cancelar(Long userId, Long id_solicitacao) {
 		PassageRequests passageRequest = passageRequestsRepository.findById(id_solicitacao).orElseThrow(() -> new RuntimeException("nenhuma solicitação encontrada"));
 
@@ -205,9 +208,18 @@ public class PassageRequestsService {
 		passageRequest.setStatus(passageRequestsStatusService.findByNome("cancelada"));
 		passageRequestsRepository.save(passageRequest);
 
+		try {
+			passageRequestAutomaticService.atualizarStatusPipeline(passageRequest, "falha_final");
+		} catch (Exception e) {
+			System.out.println("[WARN] Não foi possível atualizar pipeline para falha_final na solicitação "
+					+ id_solicitacao + ": " + e.getMessage());
+		}
+
+		passageRequestAutomaticService.limparFilaSolicitacao(id_solicitacao, "solicitacao_cancelada");
+
 	}
 	public Page<CompletedPassengerRequestDTO> buscarSolicitacoesConcluidas(Long userId, int page, int size) {
-		Page<PassageRequests> paginaDeSolicitacoes = passageRequestsRepository.findPassagerFinalizadas(
+		Page<PassageRequests> paginaDeSolicitacoes = passageRequestsRepository.findPassagerConcluidas( // Alterado de findPassagerFinalizadas para findPassagerConcluidas
 				userId,
 				PageRequest.of(page, size)
 		);

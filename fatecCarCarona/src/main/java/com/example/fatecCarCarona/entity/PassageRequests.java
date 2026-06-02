@@ -9,6 +9,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
@@ -61,6 +63,14 @@ public class PassageRequests {
 	// Optimistic locking to avoid concurrent acceptance races
 	@Version
 	@Column(name = "version", nullable = false)
-	private long version = 0L;
+	private Long version = 0L;
+
+	@PrePersist
+	@PreUpdate
+	private void ensureVersionNotNull() {
+		if (version == null) {
+			version = 0L;
+		}
+	}
 
 }

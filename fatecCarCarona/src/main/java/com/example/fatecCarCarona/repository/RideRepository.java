@@ -1,5 +1,6 @@
 package com.example.fatecCarCarona.repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -39,13 +40,12 @@ public interface RideRepository extends JpaRepository<Ride, Long> {
 	@Query("SELECT r FROM Ride r WHERE r.status.nome = 'ativa'")
 	List<Ride> findAllActiveRides();
 
+	List<Ride> findByStatusNomeAndDateTimeBefore(String statusNome, LocalDateTime limite);
+
+
 	
-	
-	@Query("SELECT r FROM Ride r WHERE r.driver.id = :userId AND r.status.nome = 'concluída'")
+	@Query("SELECT r FROM Ride r WHERE r.driver.id = :userId AND r.status.nome = 'concluida'")
 	Page<Ride> findConcluidasyDriverId(@Param("userId") Long userId, Pageable pageable);
-
-
-
 
 
 }

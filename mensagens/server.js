@@ -143,7 +143,7 @@ wss.on("connection", async (ws, req) => {
     });
   } catch (error) {
     console.error("❌ Erro de autenticação:", error.message);
-    ws.close(403, "Token inválido");
+    ws.close(4003, "Token inválido");
   }
 });
 

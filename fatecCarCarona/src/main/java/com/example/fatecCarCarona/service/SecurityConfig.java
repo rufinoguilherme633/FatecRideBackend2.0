@@ -71,6 +71,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/users").authenticated()
                         .requestMatchers(HttpMethod.PUT, "/users").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/users").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/solicitacao/concluidas").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/comentar/*").authenticated()
                         .anyRequest().authenticated()
 
                 )
@@ -93,11 +95,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of(
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "https://*.vercel.app"
-));
+        config.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:3001"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true); // permite cookies e headers como Authorization

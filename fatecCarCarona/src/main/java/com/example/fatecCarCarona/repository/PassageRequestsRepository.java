@@ -4,14 +4,16 @@ import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import com.example.fatecCarCarona.entity.PassageRequestsStatus;
 import com.example.fatecCarCarona.entity.PassageRequests;
 
 public interface PassageRequestsRepository extends JpaRepository<PassageRequests, Long> {
-	@Query("SELECT p FROM PassageRequests p WHERE p.passageiro.id = :userId AND p.status.nome = 'concluída'")
+	@Query("SELECT p FROM PassageRequests p WHERE p.passageiro.id = :userId AND p.status.nome = 'concluida'")
 	Page<PassageRequests> findPassagerConcluidas(Long userId, PageRequest of);
 	
 	@Query("SELECT p FROM PassageRequests p WHERE p.passageiro.id = :userId AND p.status.nome IN ('aceita', 'recusada', 'cancelada', 'concluida')")
@@ -21,6 +23,23 @@ public interface PassageRequestsRepository extends JpaRepository<PassageRequests
 	PassageRequests findByPassagePending(Long userId);
 
 	boolean existsByPassageiroIdAndStatusNome(Long userId, String statusNome);
+
+	boolean existsByCaronaIdAndStatusNome(Long caronaId, String statusNome);
+
+	@Modifying
+	@Query(value = "UPDATE solicitacoes SET version = 0 WHERE version IS NULL", nativeQuery = true)
+	int normalizeNullVersions();
+
+	@Modifying
+	@Query(value = """
+			UPDATE solicitacoes pr
+			JOIN status_solicitacao s ON s.id_status_solicitacao = pr.id_status_solicitacao
+			SET pr.id_status_solicitacao = :novoStatusId
+			WHERE pr.id_carona = :caronaId
+			  AND s.status_nome = 'aceita'
+			""", nativeQuery = true)
+	int concluirSolicitacoesAceitasDaCarona(@Param("caronaId") Long caronaId,
+								 @Param("novoStatusId") Long novoStatusId);
 
 
 	@Query("""

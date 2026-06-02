@@ -31,7 +31,8 @@ public class RideConversor {
 	        originDTO,
 	        destinationDTO,
 	        ride.getAvailableSeats(),
-	        ride.getVehicle().getId()
+	        ride.getVehicle().getId(),
+	        ride.getDateTime()
 	    );
 	}
 
