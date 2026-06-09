@@ -1,4 +1,4 @@
-INSERT INTO estados (id_estado, nome, uf, ibge, pais, ddd) VALUES
+INSERT INTO `estados` (`id_estado`, `nome`, `uf`, `ibge`, `pais`, `ddd`) VALUES
 (1, 'Acre', 'AC', 12, 1, '68'),
 (2, 'Alagoas', 'AL', 27, 1, '82'),
 (3, 'Amazonas', 'AM', 13, 1, '97,92'),
